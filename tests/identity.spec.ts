@@ -11,6 +11,9 @@ import { expect, test, type Page } from "@playwright/test";
  * Requires the backend on API_ORIGIN (http://localhost:8080 by default).
  */
 
+/** Origin plus the backend's servlet context path (`server.servlet.context-path`). */
+const BACKEND = "http://localhost:8080/coderev";
+
 const COOKIES = {
   accessToken: "coderev_at",
   refreshToken: "coderev_rt",
@@ -29,7 +32,7 @@ test.describe("identity", () => {
     request,
   }) => {
     // Guards against the whole suite failing confusingly when the API is down.
-    const response = await request.get("http://localhost:8080/api/health");
+    const response = await request.get(`${BACKEND}/api/health`);
 
     expect(
       response.status(),
@@ -74,7 +77,7 @@ test.describe("identity", () => {
 
     expect(response.status()).toBe(307);
     expect(response.headers()["location"]).toBe(
-      "http://localhost:8080/api/v1/oauth/github/auth",
+      `${BACKEND}/api/v1/oauth/github/auth`,
     );
     expect(response.headers()["cache-control"]).toContain("no-store");
   });

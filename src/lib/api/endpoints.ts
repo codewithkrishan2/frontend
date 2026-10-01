@@ -1,40 +1,56 @@
 /**
- * Backend paths, verbatim from the Spring controllers.
+ * The backend's servlet context path (`server.servlet.context-path`).
  *
- * The application defines neither `server.port` nor
- * `server.servlet.context-path`, so these are appended directly to the origin
- * (`http://localhost:8080` by default).
+ * Every Spring endpoint is served beneath this prefix, so it has to be joined to each path below.
+ * Controller mappings do not mention it — the container strips it before Spring routes the request —
+ * which is why it lives here as one constant rather than being baked into each path string.
+ *
+ * It is deliberately not part of `API_ORIGIN`: that variable names an origin, and the four call sites
+ * that build URLs do so by plain concatenation, so smuggling a path into it would work by accident and
+ * break the moment someone switched to `new URL()`, which discards a path on the base.
+ *
+ * Changing `SERVER_CONTEXT_PATH` on the backend means changing this.
+ */
+const CONTEXT_PATH = "/coderev";
+
+const backend = (path: string) => `${CONTEXT_PATH}${path}` as const;
+
+/**
+ * Backend paths, verbatim from the Spring controllers, prefixed with the context path.
+ *
+ * The application does not define `server.port`, so these are appended to the origin
+ * (`http://localhost:8080` by default) to give `http://localhost:8080/coderev/api/v1/...`.
  */
 export const endpoints = {
-  health: "/api/health",
+  health: backend("/api/health"),
 
   auth: {
     /** POST — body `{ refreshToken }`. Rotates: the presented token is revoked. */
-    refresh: "/api/v1/auth/refresh",
+    refresh: backend("/api/v1/auth/refresh"),
     /** POST — body `{ refreshToken }`. Idempotent; unknown tokens still 200. */
-    logout: "/api/v1/auth/logout",
+    logout: backend("/api/v1/auth/logout"),
   },
 
   oauth: {
     /** GET — 302 to GitHub. Must be a full-page navigation, not fetch. */
-    githubAuthorize: "/api/v1/oauth/github/auth",
+    githubAuthorize: backend("/api/v1/oauth/github/auth"),
   },
 
   users: {
     /** GET — requires Bearer. Responds with no `message`, only `data`. */
-    me: "/api/v1/users/me",
+    me: backend("/api/v1/users/me"),
     /** PATCH — requires Bearer. Body `{ fullName? }`. */
-    updateMe: "/api/v1/users/me",
+    updateMe: backend("/api/v1/users/me"),
   },
 } as const;
 
 /**
  * Query parameter names the backend uses when redirecting back to this app.
  *
- * `GitHubOAuthService.buildOAuthSuccessUrl` sends the browser to
+ * `OAuthRedirectFactory` sends the browser to
  * `${app.frontend-url}/oauth-success?access_token=...&refresh_token=...`, and
  * failures to `${app.frontend-url}/oauth-error?message=...`. These are
- * snake_case, unlike every JSON field.
+ * snake_case, unlike every JSON field. The same two shapes serve every provider.
  */
 export const oauthCallbackParams = {
   accessToken: "access_token",

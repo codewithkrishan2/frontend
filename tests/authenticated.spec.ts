@@ -23,7 +23,8 @@ const TEST_USER_ID = "1";
 const TEST_USER_EMAIL = "coderev-integration-test@example.invalid";
 const BASELINE_NAME = "Integration Test User";
 
-const BACKEND = "http://localhost:8080";
+/** Origin plus the backend's servlet context path (`server.servlet.context-path`). */
+const BACKEND = "http://localhost:8080/coderev";
 const APP_ORIGIN = "http://localhost:3100";
 
 const COOKIES = {
