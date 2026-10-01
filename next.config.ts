@@ -11,9 +11,15 @@ const nextConfig: NextConfig = {
   },
 
   images: {
-    // Cloudinary is configured on the Spring Boot side, so remote images will
-    // most likely be served from there. Add more patterns as needed.
     remotePatterns: [
+      // GitHub avatars: `UserResponse.profilePicture` is populated from the
+      // GitHub profile during OAuth sign-in.
+      {
+        protocol: "https",
+        hostname: "avatars.githubusercontent.com",
+        pathname: "/**",
+      },
+      // Cloudinary is configured on the Spring Boot side.
       {
         protocol: "https",
         hostname: "res.cloudinary.com",
@@ -22,23 +28,13 @@ const nextConfig: NextConfig = {
     ],
   },
 
-  // Reverse-proxy the Spring Boot API through Next.js in development so the
-  // browser stays on a single origin (no CORS preflight, cookies just work).
-  // Wiring the actual endpoints comes later.
-  async rewrites() {
-    const apiOrigin = process.env.API_PROXY_ORIGIN;
-
-    if (!apiOrigin) {
-      return [];
-    }
-
-    return [
-      {
-        source: "/api/backend/:path*",
-        destination: `${apiOrigin}/:path*`,
-      },
-    ];
-  },
+  // No rewrite to the backend on purpose.
+  //
+  // There used to be a `/api/backend/:path*` proxy so the browser could call
+  // Spring Boot same-origin. Now that every backend call happens server-side
+  // (Server Components, Server Actions, Route Handlers) with the bearer token
+  // read from an httpOnly cookie, that rewrite would only serve as an
+  // unauthenticated, publicly reachable door straight to the API. Removed.
 };
 
 export default nextConfig;

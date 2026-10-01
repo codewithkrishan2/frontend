@@ -2,8 +2,7 @@
 
 import { useEffect } from "react";
 
-import { Button } from "@/components/ui/button";
-import { Container } from "@/components/ui/container";
+import { Button, Container } from "@/components/ui";
 
 type ErrorPageProps = {
   error: Error & { digest?: string };
@@ -17,19 +16,26 @@ export default function ErrorPage({ error, reset }: ErrorPageProps) {
   }, [error]);
 
   return (
-    <Container className="flex min-h-[60vh] flex-col items-center justify-center text-center">
-      <h1 className="text-3xl font-semibold tracking-tight">
+    <Container className="flex min-h-dvh flex-col items-center justify-center py-20 text-center">
+      <p className="font-mono text-xs tracking-[0.2em] text-signal-fail uppercase">
+        Error
+      </p>
+
+      <h1 className="mt-4 text-display text-3xl font-semibold tracking-tight sm:text-4xl">
         Something went wrong
       </h1>
-      <p className="mt-3 max-w-md text-muted-foreground">
+
+      <p className="mt-4 max-w-md leading-relaxed text-muted-foreground">
         An unexpected error occurred while rendering this page.
       </p>
+
       {error.digest ? (
-        <p className="mt-2 font-mono text-xs text-muted-foreground">
+        <p className="mt-3 font-mono text-xs text-subtle-foreground">
           Digest: {error.digest}
         </p>
       ) : null}
-      <Button className="mt-8" onClick={reset}>
+
+      <Button size="lg" className="mt-9 px-7" onClick={reset}>
         Try again
       </Button>
     </Container>

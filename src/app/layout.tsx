@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 
-import { SiteFooter } from "@/components/site/site-footer";
-import { SiteHeader } from "@/components/site/site-header";
+import { PageBackdrop } from "@/components/backdrop/page-backdrop";
+import { MotionProvider } from "@/components/motion/motion-provider";
 import { env } from "@/lib/env";
 import { siteConfig } from "@/lib/site";
 
@@ -23,41 +23,49 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(env.siteUrl),
   title: {
-    default: siteConfig.name,
-    template: `%s · ${siteConfig.shortName}`,
+    default: `${siteConfig.name} — ${siteConfig.tagline}`,
+    template: `%s · ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  applicationName: siteConfig.name,
+  openGraph: {
+    type: "website",
+    siteName: siteConfig.name,
+    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    description: siteConfig.description,
+    url: env.siteUrl,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${siteConfig.name} — ${siteConfig.tagline}`,
+    description: siteConfig.description,
+  },
+  robots: { index: true, follow: true },
 };
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
+  themeColor: "#17171c",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} flex min-h-dvh flex-col`}
+        className={`${geistSans.variable} ${geistMono.variable} relative min-h-dvh`}
       >
+        <PageBackdrop />
+
         <a
           href="#main"
-          className="sr-only rounded bg-brand-600 px-3 py-2 text-white focus:not-sr-only focus:absolute focus:top-3 focus:left-3 focus:z-50 focus:ring-brand-300"
+          className="sr-only rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[60]"
         >
           Skip to content
         </a>
 
-        <SiteHeader />
-
-        <main id="main" className="flex-1">
-          {children}
-        </main>
-
-        <SiteFooter />
+        <MotionProvider>{children}</MotionProvider>
       </body>
     </html>
   );
