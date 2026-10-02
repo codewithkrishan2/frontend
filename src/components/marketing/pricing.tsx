@@ -1,6 +1,9 @@
 import Link from "next/link";
 
-import { SectionHeading } from "@/components/marketing/section-heading";
+import {
+  SectionHeading,
+  type RoutableSectionProps,
+} from "@/components/marketing/section-heading";
 import { Reveal } from "@/components/motion/reveal";
 import { Stagger, StaggerItem } from "@/components/motion/stagger";
 import { Badge, buttonVariants, Container } from "@/components/ui";
@@ -53,7 +56,7 @@ const tiers = [
   },
 ] as const;
 
-export function Pricing() {
+export function Pricing({ headingLevel }: RoutableSectionProps = {}) {
   return (
     <section
       id="pricing"
@@ -62,6 +65,7 @@ export function Pricing() {
     >
       <Container width="wide">
         <SectionHeading
+          as={headingLevel}
           eyebrow="Pricing"
           title={
             <span id="pricing-heading">Priced per developer, not per repo</span>

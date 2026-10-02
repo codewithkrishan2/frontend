@@ -186,7 +186,7 @@ test.describe("CodeRev landing page", () => {
     await expectNoHorizontalOverflow(page);
   });
 
-  test("navigation anchors scroll to their sections", async ({
+  test("navigation opens a dedicated page per section", async ({
     page,
     isMobile,
   }) => {
@@ -208,16 +208,76 @@ test.describe("CodeRev landing page", () => {
       .getByRole("link", { name: "Features" })
       .first();
 
+    // The regression this replaces: the link used to be `#features`, so it only
+    // scrolled the landing page instead of opening a page of its own.
+    await expect(featuresLink).toHaveAttribute("href", "/features");
+
     await featuresLink.click();
-    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/\/features$/);
 
-    // The features section should now be within the viewport.
-    const inView = await page.locator("#features").evaluate((node) => {
-      const rect = node.getBoundingClientRect();
-      return rect.top < window.innerHeight && rect.bottom > 0;
-    });
+    // The section is the page, so its heading is the document's h1 ...
+    await expect(page.locator("h1")).toHaveText(
+      /Everything a senior reviewer would check/i,
+    );
 
-    expect(inView, "#features should be scrolled into view").toBe(true);
+    // ... and the rest of the landing page is not along for the ride.
+    await expect(page.locator("#features")).toBeVisible();
+    await expect(page.locator("#pricing")).toHaveCount(0);
+    await expect(page.locator("#how-it-works")).toHaveCount(0);
+
+    // The page ends deliberately, on the closing call to action.
+    await expect(page.locator("#get-started")).toBeVisible();
+  });
+
+  test("each nav route stands alone and marks itself current", async ({
+    page,
+  }) => {
+    const routes = [
+      { path: "/product", id: "product", label: "Product" },
+      { path: "/features", id: "features", label: "Features" },
+      { path: "/how-it-works", id: "how-it-works", label: "How it works" },
+      { path: "/pricing", id: "pricing", label: "Pricing" },
+    ] as const;
+
+    await page.emulateMedia({ reducedMotion: "reduce" });
+
+    for (const route of routes) {
+      await page.goto(route.path, { waitUntil: "networkidle" });
+
+      // Its own section is present, and the hero never is.
+      await expect(page.locator(`#${route.id}`)).toBeVisible();
+      await expect(page.locator("#stack-heading")).toHaveCount(0);
+
+      // Exactly one h1, so the page has a usable document outline.
+      await expect(page.locator("h1")).toHaveCount(1);
+
+      // The section must clear the fixed header rather than hide beneath it.
+      const top = await page
+        .locator(`#${route.id}`)
+        .evaluate((node) => node.getBoundingClientRect().top);
+      expect(
+        top,
+        `${route.path} must start below the 64px header`,
+      ).toBeGreaterThanOrEqual(64);
+    }
+  });
+
+  test("the landing page still shows every section", async ({ page }) => {
+    // The point of the split: `/` is unchanged and still tells the whole story.
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/", { waitUntil: "networkidle" });
+
+    for (const id of [
+      "why-coderev",
+      "features",
+      "product",
+      "how-it-works",
+      "developers",
+      "pricing",
+      "get-started",
+    ]) {
+      await expect(page.locator(`#${id}`)).toHaveCount(1);
+    }
   });
 
   test("header gains its glass treatment after scrolling", async ({ page }) => {

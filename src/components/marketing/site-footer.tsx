@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { Logo } from "@/components/brand/logo";
 import { Container, Separator } from "@/components/ui";
+import { appRoutes } from "@/lib/api/endpoints";
 import { footerColumns, siteConfig, socialLinks } from "@/lib/site";
 
 const socialPaths: Record<string, string> = {
@@ -17,7 +18,9 @@ const socialPaths: Record<string, string> = {
 export function SiteFooter() {
   return (
     <footer className="relative border-t border-white/8">
-      {/* Anchor targets for the nav's Resources link and footer columns. */}
+      {/* Placeholder anchor targets for the Resources, Company and Legal columns.
+          None of that content exists yet; these keep the links from dangling.
+          Each should become a real route as its content is written. */}
       <span id="resources" className="sr-only" />
       <span id="company" className="sr-only" />
       <span id="legal" className="sr-only" />
@@ -26,7 +29,11 @@ export function SiteFooter() {
         <div className="grid gap-10 lg:grid-cols-[1.4fr_2.6fr] lg:gap-16">
           {/* Brand block */}
           <div>
-            <Link href="/" aria-label="CodeRev home" className="inline-flex">
+            <Link
+              href={appRoutes.home}
+              aria-label="CodeRev home"
+              className="inline-flex"
+            >
               <Logo />
             </Link>
 

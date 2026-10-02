@@ -1,5 +1,8 @@
 import { SectionGlow } from "@/components/backdrop/section-glow";
-import { SectionHeading } from "@/components/marketing/section-heading";
+import {
+  SectionHeading,
+  type RoutableSectionProps,
+} from "@/components/marketing/section-heading";
 import { Stagger, StaggerItem } from "@/components/motion/stagger";
 import { Card, Container } from "@/components/ui";
 
@@ -26,7 +29,7 @@ const steps = [
   },
 ];
 
-export function HowItWorks() {
+export function HowItWorks({ headingLevel }: RoutableSectionProps = {}) {
   return (
     <section
       id="how-it-works"
@@ -37,6 +40,7 @@ export function HowItWorks() {
 
       <Container width="wide">
         <SectionHeading
+          as={headingLevel}
           eyebrow="How it works"
           title={<span id="how-heading">Four steps, then it runs itself</span>}
           description="Setup is a one-time action. After that, analysis follows your existing pull request flow."

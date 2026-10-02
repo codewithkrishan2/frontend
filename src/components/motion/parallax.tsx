@@ -9,6 +9,17 @@ type ParallaxProps = {
   children: ReactNode;
   /** Pixels of travel across the element's full scroll pass. */
   distance?: number;
+  /**
+   * Which way the layer drifts relative to the page, which is what places it in
+   * depth:
+   *
+   * - `lead` — travels further than the scroll, reading as foreground.
+   * - `lag` — travels less, reading as background.
+   *
+   * Two siblings given opposing values separate as they cross the viewport, so a
+   * comparison can be expressed by the scroll itself rather than only described.
+   */
+  layer?: "lead" | "lag";
   className?: string;
 };
 
@@ -25,6 +36,7 @@ type ParallaxProps = {
 export function Parallax({
   children,
   distance = 60,
+  layer = "lead",
   className,
 }: ParallaxProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -35,13 +47,21 @@ export function Parallax({
     offset: ["start end", "end start"],
   });
 
-  const travel = prefersReducedMotion ? 0 : distance;
-  const raw = useTransform(scrollYProgress, [0, 1], [travel, -travel]);
+  // `lead` starts pushed down and ends pushed up, so it outruns the page; `lag`
+  // is the same path reversed.
+  const signed = layer === "lag" ? -distance : distance;
+  const raw = useTransform(scrollYProgress, [0, 1], [signed, -signed]);
   const y = useSpring(raw, { stiffness: 120, damping: 30, mass: 0.4 });
 
   return (
     <div ref={ref} className={className}>
-      <motion.div style={{ y }}>{children}</motion.div>
+      {/* A literal `0` rather than a zeroed spring when motion is reduced. The
+          preference is only known after hydration, so a spring would still be
+          easing down from its first value for a moment after load — visible
+          drift for the one user who asked not to see any. */}
+      <motion.div style={{ y: prefersReducedMotion ? 0 : y }}>
+        {children}
+      </motion.div>
     </div>
   );
 }

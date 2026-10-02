@@ -1,6 +1,9 @@
 "use client";
 
-import { SectionHeading } from "@/components/marketing/section-heading";
+import {
+  SectionHeading,
+  type RoutableSectionProps,
+} from "@/components/marketing/section-heading";
 import { Reveal } from "@/components/motion/reveal";
 import { Tilt } from "@/components/motion/tilt";
 import {
@@ -289,7 +292,7 @@ function ExplainPanel() {
   );
 }
 
-export function ProductShowcase() {
+export function ProductShowcase({ headingLevel }: RoutableSectionProps = {}) {
   return (
     <section
       id="product"
@@ -298,6 +301,7 @@ export function ProductShowcase() {
     >
       <Container width="wide">
         <SectionHeading
+          as={headingLevel}
           eyebrow="Product preview"
           title={
             <span id="product-heading">A review surface built for depth</span>

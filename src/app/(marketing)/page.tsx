@@ -8,28 +8,29 @@ import { Metrics } from "@/components/marketing/metrics";
 import { Pricing } from "@/components/marketing/pricing";
 import { ProblemSolution } from "@/components/marketing/problem-solution";
 import { ProductShowcase } from "@/components/marketing/product-showcase";
-import { SiteFooter } from "@/components/marketing/site-footer";
-import { SiteNav } from "@/components/marketing/site-nav";
 
+/**
+ * The full story, in order, for someone who wants to read straight through.
+ *
+ * Every section here is also reachable as its own route. This page keeps all of
+ * them: arriving at `/` should still show everything, and the section routes are
+ * a way to jump to one part without the rest, not a replacement for this.
+ *
+ * Headings stay at their default `h2` because `Hero` owns the `h1`.
+ */
 export default function HomePage() {
   return (
-    <>
-      <SiteNav />
-
-      <main id="main">
-        <Hero />
-        <LogoCloud />
-        <ProblemSolution />
-        <Features />
-        <ProductShowcase />
-        <HowItWorks />
-        <DeveloperSection />
-        <Metrics />
-        <Pricing />
-        <FinalCta />
-      </main>
-
-      <SiteFooter />
-    </>
+    <main id="main">
+      <Hero />
+      <LogoCloud />
+      <ProblemSolution />
+      <Features />
+      <ProductShowcase />
+      <HowItWorks />
+      <DeveloperSection />
+      <Metrics />
+      <Pricing />
+      <FinalCta />
+    </main>
   );
 }

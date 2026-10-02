@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { Logo } from "@/components/brand/logo";
-import { oauthCallbackParams } from "@/lib/api/endpoints";
+import { appRoutes, oauthCallbackParams } from "@/lib/api/endpoints";
 import { Alert, buttonVariants, Container } from "@/components/ui";
 import { cn } from "@/lib/utils";
 
@@ -14,10 +14,10 @@ export const metadata: Metadata = {
 /**
  * Shown when the backend redirects to `/oauth-error?message=...`.
  *
- * The message comes from `GitHubOAuthService.buildOAuthErrorUrl` or
- * `OAuthController`, so it is server-authored rather than user-supplied. It is
- * still rendered as text only — never as markup — because it arrives through the
- * query string.
+ * The message comes from `OAuthRedirectFactory.error`, so it is server-authored
+ * rather than user-supplied, and it already names the provider where that is
+ * relevant. It is still rendered as text only — never as markup — because it
+ * arrives through the query string.
  */
 export default async function OAuthErrorPage({
   searchParams,
@@ -31,7 +31,7 @@ export default async function OAuthErrorPage({
   return (
     <main className="flex min-h-dvh flex-col">
       <Container className="flex flex-1 flex-col items-center justify-center py-20 text-center">
-        <Link href="/" aria-label="CodeRev home">
+        <Link href={appRoutes.home} aria-label="CodeRev home">
           <Logo />
         </Link>
 
@@ -44,8 +44,8 @@ export default async function OAuthErrorPage({
         </h1>
 
         <p className="mt-4 max-w-md leading-relaxed text-muted-foreground">
-          The GitHub authentication attempt did not complete. You can try again,
-          or head back to the home page.
+          The sign-in attempt did not complete. You can try again, or head back
+          to the home page.
         </p>
 
         {message ? (
@@ -56,13 +56,13 @@ export default async function OAuthErrorPage({
 
         <div className="mt-9 flex flex-col gap-3 sm:flex-row">
           <Link
-            href="/login"
+            href={appRoutes.login}
             className={cn(buttonVariants({ size: "lg" }), "px-7")}
           >
             Try again
           </Link>
           <Link
-            href="/"
+            href={appRoutes.home}
             className={cn(
               buttonVariants({ variant: "outline", size: "lg" }),
               "px-7",

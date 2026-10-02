@@ -118,13 +118,19 @@ export default async function DashboardPage() {
 
           <Separator soft className="my-6" />
 
-          <dl className="grid gap-5 sm:grid-cols-3">
+          {/*
+            No "Sign-in method" row: with both GitHub and Bitbucket in play it
+            would be a guess. `UserResponse` carries no provider field, and the
+            `UserLogin` row that knows the answer is not exposed, so showing
+            anything here would be invention. Add it back when the backend
+            returns the provider.
+          */}
+          <dl className="grid gap-5 sm:grid-cols-2">
             <Detail label="User ID" value={`#${user.id}`} mono />
             <Detail
               label="Member since"
               value={formatJoinDate(user.createdAt)}
             />
-            <Detail label="Sign-in method" value="GitHub" />
           </dl>
         </Card>
 
@@ -153,7 +159,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           width="wide"
           className="flex h-16 items-center justify-between gap-4"
         >
-          <Link href="/" aria-label="CodeRev home">
+          <Link href={appRoutes.home} aria-label="CodeRev home">
             <Logo markClassName="size-[1.875rem]" />
           </Link>
 
@@ -167,7 +173,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             Your account
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Signed in via GitHub. Repository analysis arrives in a later phase.
+            Repository analysis arrives in a later phase.
           </p>
 
           <div className="mt-10">{children}</div>

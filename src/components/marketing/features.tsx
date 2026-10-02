@@ -1,6 +1,9 @@
 import type { ReactNode } from "react";
 
-import { SectionHeading } from "@/components/marketing/section-heading";
+import {
+  SectionHeading,
+  type RoutableSectionProps,
+} from "@/components/marketing/section-heading";
 import { Stagger, StaggerItem } from "@/components/motion/stagger";
 import { Card, Container } from "@/components/ui";
 import { cn } from "@/lib/utils";
@@ -138,7 +141,7 @@ const features: readonly Feature[] = [
   },
 ];
 
-export function Features() {
+export function Features({ headingLevel }: RoutableSectionProps = {}) {
   return (
     <section
       id="features"
@@ -147,6 +150,7 @@ export function Features() {
     >
       <Container width="wide">
         <SectionHeading
+          as={headingLevel}
           eyebrow="Capabilities"
           title={
             <span id="features-heading">

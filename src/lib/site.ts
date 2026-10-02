@@ -3,7 +3,12 @@
  *
  * Section-specific copy lives with the section component that renders it;
  * this file holds only what is shared across the shell (nav, footer, metadata).
+ *
+ * Paths come from `appRoutes` rather than being written out again here, so a
+ * route rename cannot leave the nav pointing at a 404.
  */
+
+import { appRoutes } from "@/lib/api/endpoints";
 
 export const siteConfig = {
   name: "CodeRev",
@@ -17,13 +22,23 @@ export type NavItem = {
   label: string;
 };
 
-/** Primary nav. Anchors resolve to sections on the landing page. */
+/**
+ * Primary nav.
+ *
+ * These are routes, not in-page anchors. Each one opens a page carrying that
+ * section alone and ends there; `/` still presents the full sequence for someone
+ * who wants to read straight through.
+ *
+ * The previous "Resources" item is gone. It pointed at `#resources`, which was an
+ * empty `sr-only` span in the footer — the link moved the page nowhere and there
+ * is no resources content to route to yet. Restore it here once there is
+ * something to show.
+ */
 export const navItems: readonly NavItem[] = [
-  { href: "#product", label: "Product" },
-  { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#resources", label: "Resources" },
+  { href: appRoutes.product, label: "Product" },
+  { href: appRoutes.features, label: "Features" },
+  { href: appRoutes.howItWorks, label: "How it works" },
+  { href: appRoutes.pricing, label: "Pricing" },
 ];
 
 export type FooterColumn = {
@@ -31,15 +46,25 @@ export type FooterColumn = {
   links: readonly NavItem[];
 };
 
+/**
+ * Footer columns.
+ *
+ * The Product column points at real routes. The other three still point at
+ * `sr-only` anchor spans in the footer itself: there is no documentation, company
+ * or legal content yet, and inventing pages for fifteen links would mean
+ * inventing the content too. They resolve the same way on every page, so nothing
+ * regressed when the sections gained routes — but they are placeholders, and
+ * should become routes as the content is written.
+ */
 export const footerColumns: readonly FooterColumn[] = [
   {
     title: "Product",
     links: [
-      { href: "#product", label: "Overview" },
-      { href: "#features", label: "Features" },
-      { href: "#how-it-works", label: "How it works" },
-      { href: "#pricing", label: "Pricing" },
-      { href: "#developers", label: "For developers" },
+      { href: appRoutes.product, label: "Overview" },
+      { href: appRoutes.features, label: "Features" },
+      { href: appRoutes.howItWorks, label: "How it works" },
+      { href: appRoutes.pricing, label: "Pricing" },
+      { href: appRoutes.developers, label: "For developers" },
     ],
   },
   {

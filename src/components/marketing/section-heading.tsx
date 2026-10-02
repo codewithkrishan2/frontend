@@ -9,6 +9,15 @@ type SectionHeadingProps = {
   title: ReactNode;
   description?: ReactNode;
   align?: "left" | "center";
+  /**
+   * Heading level. `h2` suits a section on the landing page, where `Hero` owns
+   * the `h1`; a section that is the subject of its own route has to be promoted
+   * to `h1` or that page ships with no top-level heading.
+   *
+   * Only the level changes — the type scale is identical either way, because the
+   * visual weight belongs to the section, not to the document outline.
+   */
+  as?: "h1" | "h2";
   className?: string;
 };
 
@@ -18,6 +27,7 @@ export function SectionHeading({
   title,
   description,
   align = "center",
+  as: Heading = "h2",
   className,
 }: SectionHeadingProps) {
   return (
@@ -34,9 +44,9 @@ export function SectionHeading({
         </p>
       ) : null}
 
-      <h2 className="max-w-3xl text-display text-3xl font-semibold tracking-[-0.025em] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
+      <Heading className="max-w-3xl text-display text-3xl font-semibold tracking-[-0.025em] sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
         {title}
-      </h2>
+      </Heading>
 
       {description ? (
         <p
@@ -53,3 +63,13 @@ export function SectionHeading({
 }
 
 export type { SectionHeadingProps };
+
+/**
+ * Props shared by every section that is also reachable as its own route.
+ *
+ * On the landing page the section is one of many, so its heading is an `h2`. On
+ * its own route it is the page, so the route passes `headingLevel="h1"`.
+ */
+export type RoutableSectionProps = {
+  headingLevel?: "h1" | "h2";
+};

@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { appRoutes } from "@/lib/api/endpoints";
+import { appRoutes, endpoints } from "@/lib/api/endpoints";
 import { allCookieNames, cookieNames } from "@/lib/auth/cookies";
-import { endpoints } from "@/lib/api/endpoints";
 import { serverEnv } from "@/lib/env";
 
 /**

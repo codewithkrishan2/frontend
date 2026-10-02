@@ -1,4 +1,7 @@
-import { SectionHeading } from "@/components/marketing/section-heading";
+import {
+  SectionHeading,
+  type RoutableSectionProps,
+} from "@/components/marketing/section-heading";
 import { Parallax } from "@/components/motion/parallax";
 import { Reveal } from "@/components/motion/reveal";
 import { Stagger, StaggerItem } from "@/components/motion/stagger";
@@ -132,7 +135,7 @@ const highlights = [
   },
 ];
 
-export function DeveloperSection() {
+export function DeveloperSection({ headingLevel }: RoutableSectionProps = {}) {
   return (
     <section
       id="developers"
@@ -143,6 +146,7 @@ export function DeveloperSection() {
         <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
           <div>
             <SectionHeading
+              as={headingLevel}
               align="left"
               eyebrow="For developers"
               title={

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { endpoints } from "@/lib/api/endpoints";
+import { appRoutes, endpoints, routeGuards } from "@/lib/api/endpoints";
 import type { ApiResponse, AuthResponse } from "@/lib/api/types";
 import {
   allCookieNames,
@@ -26,35 +26,25 @@ import {
  * in the middleware runtime. Hence the direct fetch below.
  */
 
-/** Prefixes that require a session. */
-const PROTECTED_PREFIXES = ["/dashboard", "/settings"] as const;
-
-/** Routes that a signed-in user should be bounced away from. */
-const GUEST_ONLY_PATHS = ["/login"] as const;
-
-const LOGIN_PATH = "/login";
-/** Query parameter carrying the originally requested path. */
-const RETURN_TO_PARAM = "next";
-
 function isProtected(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some(
+  return routeGuards.protectedPrefixes.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
 }
 
 function isGuestOnly(pathname: string): boolean {
-  return GUEST_ONLY_PATHS.some((path) => pathname === path);
+  return routeGuards.guestOnlyPaths.some((path) => pathname === path);
 }
 
 function redirectToLogin(request: NextRequest): NextResponse {
   const url = request.nextUrl.clone();
-  url.pathname = LOGIN_PATH;
+  url.pathname = appRoutes.login;
   url.search = "";
 
   // Preserve where the user was heading so sign-in can return them there.
   const target = `${request.nextUrl.pathname}${request.nextUrl.search}`;
-  if (target && target !== "/") {
-    url.searchParams.set(RETURN_TO_PARAM, target);
+  if (target && target !== appRoutes.home) {
+    url.searchParams.set(routeGuards.returnToParam, target);
   }
 
   const response = NextResponse.redirect(url);
@@ -108,7 +98,7 @@ export async function middleware(request: NextRequest) {
 
   if (isGuestOnly(pathname) && hasSession) {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = appRoutes.dashboard;
     url.search = "";
     return NextResponse.redirect(url);
   }
@@ -151,11 +141,16 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   /**
-   * Skip static assets and the OAuth landing route.
+   * Skip static assets and the OAuth landing routes.
    *
    * `/oauth-success` must not be matched: it is the Route Handler that creates
    * the session, and running the guard before it exists would redirect the user
    * to sign-in in the middle of signing in.
+   *
+   * This is the one place paths are spelled out rather than taken from
+   * `lib/api/endpoints`. Next.js parses `config.matcher` statically at build
+   * time, so it has to be a literal — an interpolated constant fails the build.
+   * Keep the two `oauth-*` segments in step with `oauthRoutes`.
    */
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|oauth-success|oauth-error|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|woff|woff2)$).*)",

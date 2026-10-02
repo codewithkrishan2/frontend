@@ -66,8 +66,11 @@ export function FinalCta() {
                   </Link>
                 </Magnetic>
 
+                {/* A route, not `#product`: this block closes every section
+                    page as well as the landing page, and an anchor would point
+                    at a section that is not on most of them. */}
                 <Link
-                  href="#product"
+                  href={appRoutes.product}
                   className={cn(
                     buttonVariants({ variant: "outline", size: "lg" }),
                     "px-8",

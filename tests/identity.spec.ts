@@ -4,7 +4,7 @@ import { expect, test, type Page } from "@playwright/test";
  * Identity integration against the running Spring Boot backend.
  *
  * What is NOT covered: a fully authenticated session. That requires a real
- * GitHub consent screen, which cannot be automated here. Everything up to and
+ * provider consent screen, which cannot be automated here. Everything up to and
  * including the token hand-off is covered, plus the invalid-session paths — which
  * is where the interesting bugs live.
  *
@@ -20,6 +20,18 @@ const COOKIES = {
   expiry: "coderev_exp",
 } as const;
 
+/**
+ * Mirrors `oauthProviders` in `src/lib/api/endpoints.ts`.
+ *
+ * Deliberately duplicated rather than imported: these tests assert the URLs the
+ * app actually serves, so sharing the constant would let a wrong path agree with
+ * itself and pass.
+ */
+const PROVIDERS = [
+  { id: "github", label: "GitHub" },
+  { id: "bitbucket", label: "Bitbucket" },
+] as const;
+
 async function cookieNames(page: Page): Promise<string[]> {
   const cookies = await page.context().cookies();
   return cookies.map((cookie) => cookie.name);
@@ -32,7 +44,7 @@ test.describe("identity", () => {
     request,
   }) => {
     // Guards against the whole suite failing confusingly when the API is down.
-    const response = await request.get(`${BACKEND}/api/health`);
+    const response = await request.get(`${BACKEND}/api/v1/health`);
 
     expect(
       response.status(),
@@ -56,30 +68,64 @@ test.describe("identity", () => {
     ).toBeVisible();
   });
 
-  test("sign-in page offers GitHub as the only method", async ({ page }) => {
+  test("sign-in page offers every OAuth provider and no password", async ({
+    page,
+  }) => {
     await page.goto("/login");
 
-    const github = page.getByRole("link", { name: /Continue with GitHub/i });
-    await expect(github).toBeVisible();
-    // Must point at our own handler, never at the backend origin directly.
-    await expect(github).toHaveAttribute("href", "/api/auth/github");
+    for (const provider of PROVIDERS) {
+      const link = page.getByRole("link", {
+        name: new RegExp(`Continue with ${provider.label}`, "i"),
+      });
+      await expect(link).toBeVisible();
+      // Must point at our own handler, never at the backend origin directly.
+      await expect(link).toHaveAttribute("href", `/api/auth/${provider.id}`);
+    }
 
     // The backend exposes no credential login, so no password field should exist.
     await expect(page.locator('input[type="password"]')).toHaveCount(0);
   });
 
-  test("the GitHub entry point redirects to the backend authorize endpoint", async ({
+  for (const provider of PROVIDERS) {
+    test(`the ${provider.label} entry point redirects to the backend authorize endpoint`, async ({
+      request,
+    }) => {
+      const response = await request.get(`/api/auth/${provider.id}`, {
+        maxRedirects: 0,
+      });
+
+      expect(response.status()).toBe(307);
+      expect(response.headers()["location"]).toBe(
+        `${BACKEND}/api/v1/oauth/${provider.id}/auth`,
+      );
+      expect(response.headers()["cache-control"]).toContain("no-store");
+    });
+  }
+
+  test("an unknown provider is rejected rather than proxied", async ({
     request,
   }) => {
-    const response = await request.get("/api/auth/github", {
+    // The [provider] segment is untrusted input; it must not be concatenated
+    // into a backend URL.
+    const response = await request.get("/api/auth/gitlab", {
       maxRedirects: 0,
     });
 
-    expect(response.status()).toBe(307);
-    expect(response.headers()["location"]).toBe(
-      `${BACKEND}/api/v1/oauth/github/auth`,
-    );
-    expect(response.headers()["cache-control"]).toContain("no-store");
+    expect(response.status()).toBe(404);
+  });
+
+  test("the sign-out handler is not shadowed by the provider route", async ({
+    request,
+  }) => {
+    // `/api/auth/signout` is a static sibling of `/api/auth/[provider]`. Next.js
+    // matches static segments first, but a regression here would silently turn
+    // sign-out into a 404 and strand users with a dead session.
+    const response = await request.get("/api/auth/signout", {
+      maxRedirects: 0,
+    });
+
+    expect(response.status()).toBe(303);
+    expect(response.headers()["location"]).toContain("/login");
   });
 
   test("oauth-success converts query tokens into httpOnly cookies", async ({

@@ -1,14 +1,20 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { oauthCallbackParams, oauthRoutes } from "@/lib/api/endpoints";
+import {
+  appRoutes,
+  oauthCallbackParams,
+  oauthRoutes,
+} from "@/lib/api/endpoints";
 import { buildSessionCookies } from "@/lib/auth/cookies";
 
 /**
- * Landing point for a successful GitHub sign-in.
+ * Landing point for a successful sign-in, whichever provider was used.
  *
- * `GitHubOAuthService.buildOAuthSuccessUrl` redirects the browser here as
+ * `OAuthRedirectFactory.success` redirects the browser here as
  * `/oauth-success?access_token=<jwt>&refresh_token=<uuid>` (snake_case, unlike
- * every JSON field the API returns).
+ * every JSON field the API returns). The hand-off is provider-agnostic — GitHub
+ * and Bitbucket both arrive here with the same two parameters — so this handler
+ * needs no knowledge of which one was used.
  *
  * Deliberately a Route Handler and not a page:
  *
@@ -39,7 +45,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(errorUrl);
   }
 
-  const destination = new URL("/dashboard", request.nextUrl.origin);
+  const destination = new URL(appRoutes.dashboard, request.nextUrl.origin);
   const response = NextResponse.redirect(destination);
 
   // `expiresIn` is not part of the redirect, so the access token lifetime is

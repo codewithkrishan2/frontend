@@ -4,20 +4,23 @@ import Link from "next/link";
 import { CodeField } from "@/components/backdrop/code-field";
 import { SpotlightSection } from "@/components/backdrop/spotlight-section";
 import { Logo } from "@/components/brand/logo";
-import { GitHubSignIn } from "@/components/auth/github-sign-in";
+import { OAuthSignInOptions } from "@/components/auth/oauth-sign-in";
+import { appRoutes } from "@/lib/api/endpoints";
 import { Card, Container, Separator } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to CodeRev with your GitHub account.",
+  description: "Sign in to CodeRev with your GitHub or Bitbucket account.",
   robots: { index: false, follow: false },
 };
 
 /**
  * Sign-in screen.
  *
- * GitHub OAuth is the only route in: the backend exposes no credential login
- * endpoint, so there is deliberately no email/password form here.
+ * OAuth is the only route in: the backend exposes no credential login endpoint,
+ * so there is deliberately no email/password form here. The provider buttons are
+ * rendered from the registry in `lib/api/endpoints`, so this page does not need
+ * to change when a provider is added.
  */
 export default function LoginPage() {
   return (
@@ -27,7 +30,7 @@ export default function LoginPage() {
 
         <Container width="narrow" className="relative">
           <div className="mx-auto flex max-w-sm flex-col items-center">
-            <Link href="/" aria-label="CodeRev home">
+            <Link href={appRoutes.home} aria-label="CodeRev home">
               <Logo markClassName="size-9" />
             </Link>
 
@@ -36,11 +39,11 @@ export default function LoginPage() {
             </h1>
 
             <p className="mt-3 text-center text-sm leading-relaxed text-muted-foreground">
-              Connect your GitHub account to start reviewing your repositories.
+              Connect your code host to start reviewing your repositories.
             </p>
 
             <Card tone="glass" padding="lg" className="mt-9 w-full">
-              <GitHubSignIn />
+              <OAuthSignInOptions />
 
               <Separator soft className="my-6" />
 
