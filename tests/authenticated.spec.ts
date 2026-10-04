@@ -97,13 +97,21 @@ test.describe("authenticated identity flows", () => {
     await expect(page).toHaveURL(/\/dashboard$/);
 
     // Real values straight from Postgres.
+    //
+    // Scoped to the main region rather than the whole page: the app shell's
+    // sidebar also shows the signed-in name and email, so an unscoped
+    // `getByText(TEST_USER_EMAIL)` matches twice and trips strict mode. Scoping
+    // also makes the assertion say what it means — that the *page* rendered the
+    // profile, not merely that the chrome did.
+    const main = page.getByRole("main");
+
     await expect(
-      page.getByRole("heading", { name: BASELINE_NAME }),
+      main.getByRole("heading", { name: BASELINE_NAME }),
     ).toBeVisible();
-    await expect(page.getByText(TEST_USER_EMAIL)).toBeVisible();
-    await expect(page.getByText("Active", { exact: true })).toBeVisible();
-    await expect(page.getByText("Email verified")).toBeVisible();
-    await expect(page.getByText(`#${TEST_USER_ID}`)).toBeVisible();
+    await expect(main.getByText(TEST_USER_EMAIL)).toBeVisible();
+    await expect(main.getByText("Active", { exact: true })).toBeVisible();
+    await expect(main.getByText("Email verified")).toBeVisible();
+    await expect(main.getByText(`#${TEST_USER_ID}`)).toBeVisible();
   });
 
   test("profile form persists a change through PATCH /users/me", async ({

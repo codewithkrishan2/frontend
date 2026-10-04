@@ -61,6 +61,48 @@ export const endpoints = {
     /** PATCH — requires Bearer. Body `{ fullName? }`. */
     updateMe: backend("/api/v1/users/me"),
   },
+
+  /**
+   * Source-control integration. Every path here requires a Bearer token except
+   * the two the providers themselves call — the OAuth callback and the webhook
+   * sink — which are `permitAll` on the backend and are not this app's concern.
+   *
+   * None of these paginate: the collection endpoints return a bare array in
+   * `data`, ordered server-side.
+   */
+  scm: {
+    /** GET — active providers only, ordered by `displayOrder` then name. */
+    providers: backend("/api/v1/scm/providers"),
+    /**
+     * GET — full provider detail, keyed by the **numeric id** rather than the
+     * code. `ScmProviderController` declares `@PathVariable Integer providerId`,
+     * so a non-numeric segment is a 400, not a 404.
+     */
+    provider: (providerId: number) =>
+      backend(`/api/v1/scm/providers/${providerId}`),
+
+    /** GET — every connection for the caller, newest first. POST — create. */
+    connections: backend("/api/v1/scm/connections"),
+    /**
+     * GET — the provider consent URL to navigate to.
+     *
+     * Answers JSON, not a 302, so the caller owns the navigation. `providerCode`
+     * is a required `@RequestParam`; omitting it is a 400.
+     *
+     * Declared before `/{connectionId}` in the controller, so "authorize" is
+     * never mistaken for an id.
+     */
+    authorize: (providerCode: string) =>
+      `${backend("/api/v1/scm/connections/authorize")}?providerCode=${encodeURIComponent(providerCode)}`,
+    /**
+     * GET — one connection. DELETE — disconnect it.
+     *
+     * Ownership is enforced in the service layer, so another user's id answers
+     * 404 `SCM_CONNECTION_NOT_FOUND` rather than 403. DELETE is idempotent.
+     */
+    connection: (connectionId: number) =>
+      backend(`/api/v1/scm/connections/${connectionId}`),
+  },
 } as const;
 
 /**
@@ -157,6 +199,62 @@ export const oauthRoutes = {
 } as const;
 
 /**
+ * Query parameters on the SCM connection-result redirect.
+ *
+ * `ScmOAuthCallbackController` finishes every branch with
+ * `sendRedirect("${app.frontend-url}/scm/connection-result?provider=…&status=…")`,
+ * so this is a two-sided contract with `RESULT_PATH` in that controller.
+ *
+ * Unlike sign-in, these are camel-free single words and carry **no** token,
+ * code or error detail — the controller deliberately keeps diagnostics in its
+ * logs. `status` is one of exactly three literals.
+ */
+export const scmConnectionResultParams = {
+  provider: "provider",
+  status: "status",
+} as const;
+
+/**
+ * Query parameters this app puts on `/integrations` when a connection attempt
+ * could not even be started.
+ *
+ * Distinct from `scmConnectionResultParams`: those describe a provider round
+ * trip that happened, these describe one that never left. `reason` carries a
+ * `ScmErrorCode`, which is a safe enumerated value — the backend's diagnostic
+ * messages stay in its logs.
+ */
+export const scmConnectStartParams = {
+  outcome: "connect",
+  provider: "provider",
+  reason: "reason",
+} as const;
+
+/** The only value `scmConnectStartParams.outcome` takes. */
+export const SCM_CONNECT_START_FAILED = "failed";
+
+/** The three outcomes `ScmOAuthCallbackController` can redirect with. */
+export const scmConnectionResultStatuses = [
+  /** Credentials stored; the connection is live. */
+  "success",
+  /** The user declined consent at the provider (`error` param was present). */
+  "denied",
+  /** A `ScmException` or an unexpected failure. Detail stayed server-side. */
+  "failed",
+] as const;
+
+export type ScmConnectionResultStatus =
+  (typeof scmConnectionResultStatuses)[number];
+
+export function isScmConnectionResultStatus(
+  value: string | undefined,
+): value is ScmConnectionResultStatus {
+  return (
+    value !== undefined &&
+    (scmConnectionResultStatuses as readonly string[]).includes(value)
+  );
+}
+
+/**
  * Routes served by this Next.js app.
  *
  * The marketing routes each render one section of the landing page as a page in
@@ -175,6 +273,38 @@ export const appRoutes = {
 
   login: "/login",
   dashboard: "/dashboard",
+
+  /** Source-control connections hub. */
+  integrations: "/integrations",
+  /**
+   * One provider's detail page.
+   *
+   * Keyed by `providerCode` rather than the numeric id the backend uses, because
+   * `/integrations/GITHUB` is a URL worth having. The page resolves the code to
+   * an id against the provider list before calling
+   * `GET /scm/providers/{providerId}`.
+   */
+  integration: (providerCode: string) =>
+    `/integrations/${encodeURIComponent(providerCode)}`,
+  /**
+   * Where the backend sends the browser after a provider consent round trip.
+   *
+   * Must stay in step with `RESULT_PATH` in `ScmOAuthCallbackController`
+   * (`/scm/connection-result`), appended to `app.frontend-url`. Renaming it
+   * strands every connection attempt on a 404.
+   */
+  scmConnectionResult: "/scm/connection-result",
+  /**
+   * Starts a provider consent flow for one SCM provider.
+   *
+   * A local Route Handler rather than a direct link, for the same reason
+   * `/api/auth/[provider]` exists: fetching the authorization URL needs the
+   * access token, which lives in an httpOnly cookie and never reaches the
+   * browser. The handler reads the cookie, asks the backend for the URL, then
+   * redirects.
+   */
+  startScmConnect: (providerCode: string) =>
+    `/api/scm/connect/${encodeURIComponent(providerCode)}`,
   /**
    * Clears the session, then redirects to sign-in.
    *
@@ -195,10 +325,15 @@ export const appRoutes = {
  *
  * `/settings` has no route yet; the prefix is listed so the guard is already in
  * place when it lands.
+ *
+ * `/scm` covers the connection-result landing page. Guarding it is deliberate
+ * and safe: the backend redirect is a top-level GET navigation, which `sameSite:
+ * "lax"` cookies are sent on, so the session survives the hop back from the
+ * provider and the page can show the connection it just created.
  */
 export const routeGuards = {
   /** Require a session. Matched as exact path or path prefix. */
-  protectedPrefixes: ["/dashboard", "/settings"],
+  protectedPrefixes: ["/dashboard", "/integrations", "/scm", "/settings"],
   /** Bounce a signed-in user away from these. */
   guestOnlyPaths: [appRoutes.login],
   /** Carries the originally requested path onto the sign-in URL. */

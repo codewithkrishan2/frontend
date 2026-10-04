@@ -4,10 +4,17 @@
  *
  *   node scripts/mint-test-token.mjs <userId>
  *
- * Signs an HS256 JWT with the same claims as `JwtTokenProvider.generateAccessToken`
- * (`sub` = user id as a string, plus `email`, `iat`, `exp`), using the local
- * development secret from `application-local.yml`. The secret is base64 and is
- * decoded before use, matching `Keys.hmacShaKeyFor(Decoders.BASE64.decode(...))`.
+ * Signs an HS512 JWT with the same claims as `JwtTokenProvider.generateAccessToken`
+ * (`iss` = "coderev-identity", `sub` = user id as a string, plus `email`, `iat`,
+ * `exp`), using the local development secret from `application-local.yml`. The
+ * secret is base64 and is decoded before use, matching
+ * `Keys.hmacShaKeyFor(Decoders.BASE64.decode(...))`.
+ *
+ * The algorithm must be HS512, not HS256. `JwtTokenProvider` pins both sides to
+ * `Jwts.SIG.HS512` and then asserts the header algorithm after verification, with
+ * the stated intent that "a token signed HS256 with this key cannot be presented
+ * to an HS512 issuer". An HS256 token is therefore rejected as a bad signature —
+ * indistinguishable from a missing user, since both surface as the same 401.
  *
  * This exists because sign-in requires a real GitHub consent screen, which cannot
  * be automated. It lets the authenticated routes be exercised for real rather
@@ -48,9 +55,12 @@ function base64url(input) {
 
 const issuedAt = Math.floor(Date.now() / 1000);
 
-const header = base64url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+const header = base64url(JSON.stringify({ alg: "HS512", typ: "JWT" }));
 const payload = base64url(
   JSON.stringify({
+    // `JwtTokenProvider.verifyAccessToken` calls `requireIssuer(ISSUER)`, so a
+    // token without this claim is rejected before the subject is even read.
+    iss: "coderev-identity",
     sub: String(userId),
     email,
     iat: issuedAt,
@@ -58,7 +68,7 @@ const payload = base64url(
   }),
 );
 
-const signature = createHmac("sha256", Buffer.from(DEV_SECRET_BASE64, "base64"))
+const signature = createHmac("sha512", Buffer.from(DEV_SECRET_BASE64, "base64"))
   .update(`${header}.${payload}`)
   .digest("base64")
   .replace(/\+/g, "-")
