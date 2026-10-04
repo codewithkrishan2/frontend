@@ -1,17 +1,30 @@
 # CodeRev — Frontend
 
-Marketing site for CodeRev, an AI code-intelligence platform. Built with Next.js
-and Tailwind CSS.
+Frontend for CodeRev, an AI code-intelligence platform. Next.js 16 (App Router),
+React 19, TypeScript, Tailwind v4, Playwright.
 
-**Phase 1 (this repository, complete):** the public landing page, plus a shared
-UI component library for the application to be built on.
+**Built:** the public landing site and shared UI library; **identity** (GitHub and
+Bitbucket OAuth sign-in, session handling, profile); and **SCM integration**
+(connecting, inspecting and disconnecting source-control accounts). Both features
+are wired to the Spring Boot service in `../application-services`.
 
-**Not built yet:** authentication, user dashboard, repository connection, billing,
-and any backend or AI integration. The Spring Boot service in
-`../application-services` is not wired up yet.
+**Not built yet:** repository browsing, pull-request review, AI analysis, billing.
 
-Copy on the site is marked as illustrative or preview wherever it describes
-capability that has not shipped.
+Copy on the marketing site is marked as illustrative or preview wherever it
+describes capability that has not shipped.
+
+## Documentation
+
+Feature documentation lives in [`docs/`](docs/README.md) — one document per
+feature, covering what is built, the contracts it depends on, and what is not:
+
+- [Identity](docs/features/identity.md) — OAuth sign-in, sessions, profile
+- [SCM integration](docs/features/scm-integration.md) — provider connections
+
+Shared architecture (the server-only API layer, route guarding, the app shell,
+the design system and the test harness) is in [`docs/README.md`](docs/README.md).
+
+The sections below cover setup and the identity integration in more detail.
 
 ## Requirements
 
