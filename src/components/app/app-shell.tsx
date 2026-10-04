@@ -40,7 +40,23 @@ type NavItem = {
    * screens exist.
    */
   soon?: boolean;
+  /**
+   * Overrides the default "current route" test.
+   *
+   * Needed because two rows share a destination. Repository browsing has no
+   * provider-agnostic landing page — a repository is only reachable through a
+   * connection, so choosing one is the first step — which means Repositories and
+   * Integrations both point at the hub. Prefix matching on `href` alone would
+   * then light up both rows at once on every page, putting two
+   * `aria-current` elements in the nav and leaving a reader unable to tell where
+   * they are.
+   */
+  activeWhen?: (pathname: string) => boolean;
 };
+
+/** True on any repository-browsing route. */
+const isRepositoryRoute = (pathname: string) =>
+  pathname.includes("/repositories");
 
 const navSections: readonly { heading: string; items: readonly NavItem[] }[] = [
   {
@@ -51,6 +67,12 @@ const navSections: readonly { heading: string; items: readonly NavItem[] }[] = [
         label: "Integrations",
         href: appRoutes.integrations,
         icon: IntegrationsIcon,
+        // Yields to Repositories on the browsing routes, which are nested under
+        // `/integrations/` but are a different part of the product.
+        activeWhen: (pathname) =>
+          (pathname === appRoutes.integrations ||
+            pathname.startsWith(`${appRoutes.integrations}/`)) &&
+          !isRepositoryRoute(pathname),
       },
     ],
   },
@@ -58,12 +80,19 @@ const navSections: readonly { heading: string; items: readonly NavItem[] }[] = [
     heading: "Review",
     items: [
       {
+        // Points at the hub because that is genuinely the first step: a
+        // repository is only reachable through a connection, so the hub's
+        // per-account "Browse repositories" is the entry point. It highlights on
+        // the browsing routes rather than on the hub itself.
         label: "Repositories",
         href: appRoutes.integrations,
         icon: RepositoriesIcon,
-        soon: true,
+        activeWhen: isRepositoryRoute,
       },
       {
+        // Still unbuilt as a destination: pull requests exist only inside a
+        // repository, and there is no cross-repository inbox. Labelled rather
+        // than hidden, so the product's shape stays visible.
         label: "Pull requests",
         href: appRoutes.integrations,
         icon: PullRequestsIcon,
@@ -304,9 +333,12 @@ function NavRow({
     );
   }
 
-  // Prefix matching so a nested route — `/integrations/GITHUB` — keeps its
-  // parent highlighted.
-  const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+  // Prefix matching by default, so a nested route — `/integrations/GITHUB` —
+  // keeps its parent highlighted. Items that share a destination with another
+  // row supply their own test; see `activeWhen`.
+  const active = item.activeWhen
+    ? item.activeWhen(pathname)
+    : pathname === item.href || pathname.startsWith(`${item.href}/`);
 
   return (
     <Link

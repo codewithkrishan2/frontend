@@ -5,7 +5,7 @@ import { ConnectProviderButton } from "@/components/scm/connect-provider-button"
 import { ConnectionStatusBadge } from "@/components/scm/connection-status-badge";
 import { DisconnectConnection } from "@/components/scm/disconnect-connection";
 import { ProviderTile } from "@/components/scm/provider-tile";
-import { Alert, Avatar, Card, Separator } from "@/components/ui";
+import { Alert, Avatar, buttonVariants, Card, Separator } from "@/components/ui";
 import { appRoutes } from "@/lib/api/endpoints";
 import { type ScmConnectionResponse } from "@/lib/api/types";
 import {
@@ -88,6 +88,24 @@ export function ConnectionCard({ connection }: ConnectionCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {/* The entry point into repository browsing.
+              Offered only on a live connection, because browsing needs
+              credentials this connection still has — a disconnected row has had
+              them destroyed, and a reconnect-required one would fail on the
+              first provider call. Carrying the connection id means the
+              repository page reads through *this* account rather than defaulting
+              to the newest one, which matters once two are linked. */}
+          {disconnected || status.reconnectable ? null : (
+            <Link
+              href={appRoutes.repositories(connection.providerCode, {
+                connection: connection.id,
+              })}
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
+            >
+              Browse repositories
+            </Link>
+          )}
+
           {status.reconnectable ? (
             <ConnectProviderButton
               providerCode={connection.providerCode}

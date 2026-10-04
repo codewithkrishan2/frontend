@@ -2,12 +2,15 @@
 
 One document per feature. Each is self-contained: what it does, the routes and files involved, the contracts it depends on, and what is not built yet.
 
-| Feature                                           | Document                                                     | State |
-| ------------------------------------------------- | ------------------------------------------------------------ | ----- |
-| Identity — OAuth sign-in, sessions, profile       | [`features/identity.md`](features/identity.md)               | Built |
-| SCM integration — connect source-control accounts | [`features/scm-integration.md`](features/scm-integration.md) | Built |
+| Feature                                                    | Document                                                                 | State |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------ | ----- |
+| Identity — OAuth sign-in, sessions, profile                | [`features/identity.md`](features/identity.md)                           | Built |
+| SCM integration — connect source-control accounts          | [`features/scm-integration.md`](features/scm-integration.md)             | Built |
+| Repository management — browse repositories, PRs and diffs | [`features/repository-management.md`](features/repository-management.md) | Built |
 
-Everything else in the product — repository indexing, pull-request review, AI analysis, billing — does not exist on either side yet. A marketing site (six pages under the `(marketing)` route group) exists but is not a feature in this sense.
+The three build on each other in that order: identity establishes who the user is, SCM integration records which provider accounts they have authorized, and repository management is the first feature to _use_ one of those authorizations.
+
+Everything else in the product — repository indexing, AI review, review orchestration, billing — does not exist on either side yet. A marketing site (six pages under the `(marketing)` route group) exists but is not a feature in this sense.
 
 Backend documentation is separate and currently only a draft at `application-services/docs/BACKEND.md`.
 
@@ -83,7 +86,9 @@ Two deliberate choices:
 
 **The mobile sheet closes on tap**, via an `onNavigate` callback the desktop rail does not pass, rather than by watching `pathname` in an effect. Closing is a consequence of the user's click, so it belongs in the handler.
 
-Nav shows Repositories, Pull requests and Settings as disabled rows with a "Soon" badge — labelled rather than hidden, so the product's shape is visible without implying the screens exist.
+Nav shows Pull requests and Settings as disabled rows with a "Soon" badge — labelled rather than hidden, so the product's shape is visible without implying the screens exist. Repositories is live, and points at the integrations hub because repository browsing has no provider-agnostic landing page: a repository is only reachable through a connection, so choosing one is the first step.
+
+That makes two rows share a destination, which is why `NavItem` carries an optional `activeWhen`. Prefix matching on `href` alone would light up both Integrations and Repositories on every page under `/integrations`, putting two `aria-current` elements in the nav and leaving a reader unable to tell where they are.
 
 ```
 src/components/app/

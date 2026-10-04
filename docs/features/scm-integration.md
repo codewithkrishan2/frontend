@@ -2,7 +2,7 @@
 
 Connecting source-control accounts — browsing available providers, granting consent, inspecting what was granted, and disconnecting.
 
-This is the post-login surface at `/integrations`. It covers **connection management only**. Reading repositories or pull requests is not built on either side: the backend's operation engine can do it, but exposes no REST endpoint.
+This is the post-login surface at `/integrations`. It covers **connection management only** — browsing what a connection can see is the [repository management feature](repository-management.md), which this one hands off to.
 
 Read [`../README.md`](../README.md) first for the shared rules this feature relies on, in particular that the browser never calls the backend directly.
 
@@ -10,21 +10,22 @@ Read [`../README.md`](../README.md) first for the shared rules this feature reli
 
 ## State
 
-| Capability                                         | State     | Notes                                                 |
-| -------------------------------------------------- | --------- | ----------------------------------------------------- |
-| List available providers                           | Built     | DB-seeded on the backend: GitHub, Bitbucket           |
-| Connect a provider                                 | Built     | Full consent round trip                               |
-| Connect a second account to the same provider      | Built     | Backend upserts on `(user, provider, account)`        |
-| Reconnect an expired / revoked connection          | Built     | Same flow; renews rather than duplicates              |
-| Disconnect                                         | Built     | Confirmation dialog, destroys credentials             |
-| Connection history                                 | Built     | `DISCONNECTED` rows kept and folded away              |
-| Provider detail — scopes, capabilities, operations | Built     | `/integrations/GITHUB`                                |
-| Connection-result landing                          | Built     | Handles all three backend outcomes                    |
-| Failure explanation when connect cannot start      | Built     | Maps `ScmErrorCode` to plain English                  |
-| Browse repositories                                | Not built | No backend endpoint                                   |
-| Browse / review pull requests                      | Not built | No backend endpoint                                   |
-| Webhook status or delivery log                     | Not built | Backend ingests but exposes nothing                   |
-| Silent token refresh for connections               | Not built | Backend declares the capability, nothing schedules it |
+| Capability                                         | State     | Notes                                                                |
+| -------------------------------------------------- | --------- | -------------------------------------------------------------------- |
+| List available providers                           | Built     | DB-seeded on the backend: GitHub, Bitbucket                          |
+| Connect a provider                                 | Built     | Full consent round trip                                              |
+| Connect a second account to the same provider      | Built     | Backend upserts on `(user, provider, account)`                       |
+| Reconnect an expired / revoked connection          | Built     | Same flow; renews rather than duplicates                             |
+| Disconnect                                         | Built     | Confirmation dialog, destroys credentials                            |
+| Connection history                                 | Built     | `DISCONNECTED` rows kept and folded away                             |
+| Provider detail — scopes, capabilities, operations | Built     | `/integrations/GITHUB`                                               |
+| Connection-result landing                          | Built     | Handles all three backend outcomes                                   |
+| Failure explanation when connect cannot start      | Built     | Maps `ScmErrorCode` to plain English                                 |
+| Browse repositories                                | Built     | Separate feature — [repository management](repository-management.md) |
+| Browse pull requests, files and diffs              | Built     | Separate feature — [repository management](repository-management.md) |
+| Review pull requests                               | Not built | Later module                                                         |
+| Webhook status or delivery log                     | Not built | Backend ingests but exposes nothing                                  |
+| Silent token refresh for connections               | Not built | Backend declares the capability, nothing schedules it                |
 
 ---
 
@@ -222,7 +223,7 @@ if (providerId === undefined) notFound();
 | GET    | `/api/v1/scm/connections/{connectionId}`          | Bearer | wrapper exists, unused                  |
 | POST   | `/api/v1/scm/connections`                         | Bearer | wrapper exists, unused                  |
 
-**Nothing paginates.** Both collection endpoints return a bare array in `data`, ordered server-side — providers by `displayOrder` then name, connections newest-connected first. There is no `page` or `size` to pass.
+**None of _these_ endpoints paginate.** Both collection endpoints return a bare array in `data`, ordered server-side — providers by `displayOrder` then name, connections newest-connected first. There is no `page` or `size` to pass. The repository-management endpoints nested beneath `/scm/connections/{connectionId}` do paginate, with a `PageResponse` envelope; see [that feature](repository-management.md#pagination).
 
 `providerId` and `connectionId` are `Integer` on the backend, so a non-numeric segment is a 400, not a 404. Ownership is enforced in the backend's service layer, so another user's connection id answers `404 SCM_CONNECTION_NOT_FOUND` rather than 403.
 
@@ -280,9 +281,7 @@ Worth adding, in rough priority order: the connection-result contract for all th
 
 - **No committed tests** for any of this feature's routes.
 - **A misconfigured provider cannot be detected ahead of time.** `GET /scm/providers` exposes no signal for whether server-side credentials are configured — `active` only reflects the database flag — so Connect cannot be disabled preemptively. It fails on click with an explanatory banner instead.
-- **Nothing consumes the connection.** There is no repository or pull-request UI, because the backend exposes no endpoint for either.
 - **`EXPIRED` requires a manual reconnect.** The backend declares `OAUTH_TOKEN_REFRESH` per provider but nothing schedules a refresh.
 - **No webhook visibility.** The backend ingests and stores deliveries; nothing is surfaced.
-- `lastUsedAt` renders as "Not yet used" indefinitely, since no feature yet uses a connection.
 - Bitbucket declares `CREATE_PR_REVIEW` unsupported, so its detail page shows "Submit reviews" under Not supported even once connected. That is a backend capability declaration, not a UI bug.
 - The hub does not summarise connections on `/dashboard`; that would mean a second backend round trip on a page that otherwise needs one, so the dashboard links here instead.

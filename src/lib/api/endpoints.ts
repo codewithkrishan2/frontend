@@ -102,8 +102,189 @@ export const endpoints = {
      */
     connection: (connectionId: number) =>
       backend(`/api/v1/scm/connections/${connectionId}`),
+
+    /* ------------------------------------------------------------------- *
+     * Repository Management (backend Module 3)
+     *
+     * Everything below is nested under a connection, and that is load-bearing
+     * rather than tidy. A repository has no identity in this product
+     * independent of the authorization it is read through: the same name can
+     * exist on two providers, and whether it is visible at all depends on whose
+     * credential is asking. The backend resolves
+     *
+     *   authenticated user -> connection -> repository -> pull request
+     *
+     * and the URL states that order.
+     *
+     * **A repository is addressed as `{owner}/{repo}`, two path segments.**
+     * Provider APIs address repositories by owner-qualified name rather than by
+     * id, so the owner-qualified name *is* the identifier for these calls. The
+     * `id` on a repository response is the provider's own id and is not
+     * accepted in any URL — use `fullName`, or `owner` plus `name`.
+     *
+     * Unlike the connection and provider endpoints, **these paginate.** They
+     * answer a `PageResponse` envelope inside `data`, and `totalElements` is
+     * frequently absent — see `PageResponse` in `types.ts`.
+     * ------------------------------------------------------------------- */
+
+    /**
+     * GET — repositories the connection's credential can see.
+     *
+     * `search` matches name, full name and description. It is applied by the
+     * backend over provider pages, so its reach is bounded; the absence of
+     * `totalElements` is how a response says the result set may be incomplete.
+     */
+    repositories: (connectionId: number, query?: RepositoryListQuery) =>
+      withQuery(
+        backend(`/api/v1/scm/connections/${connectionId}/repositories`),
+        {
+          page: query?.page,
+          size: query?.size,
+          search: query?.search,
+        },
+      ),
+
+    /**
+     * GET — one repository.
+     *
+     * A repository the credential cannot see answers 404
+     * `SCM_REPOSITORY_NOT_FOUND`. Providers deliberately do not distinguish
+     * "absent" from "invisible to you", and neither does this.
+     */
+    repository: (connectionId: number, owner: string, repo: string) =>
+      backend(
+        `/api/v1/scm/connections/${connectionId}/repositories/${segment(owner)}/${segment(repo)}`,
+      ),
+
+    /**
+     * GET — pull requests in a repository.
+     *
+     * `state` is the canonical filter and is applied **by the provider**, not
+     * in memory: each provider's operation configuration declares how to spell
+     * it. Omitting it defaults to `OPEN` on the backend. An unrecognised value
+     * is a 400 rather than a quietly defaulted list.
+     */
+    pullRequests: (
+      connectionId: number,
+      owner: string,
+      repo: string,
+      query?: PullRequestListQuery,
+    ) =>
+      withQuery(
+        `${backend(
+          `/api/v1/scm/connections/${connectionId}/repositories/${segment(owner)}/${segment(repo)}`,
+        )}/pull-requests`,
+        {
+          page: query?.page,
+          size: query?.size,
+          state: query?.state,
+          search: query?.search,
+        },
+      ),
+
+    /**
+     * GET — one pull request, with the repository it belongs to attached.
+     *
+     * Keyed by `pullRequestNumber`. On at least one provider the number and the
+     * global id are different integers and only the number is accepted in a
+     * URL, so passing an id here produces a 404.
+     */
+    pullRequest: (
+      connectionId: number,
+      owner: string,
+      repo: string,
+      pullRequestNumber: number,
+    ) =>
+      `${backend(
+        `/api/v1/scm/connections/${connectionId}/repositories/${segment(owner)}/${segment(repo)}`,
+      )}/pull-requests/${pullRequestNumber}`,
+
+    /** GET — the files a pull request changes. Paged, because providers page it. */
+    pullRequestFiles: (
+      connectionId: number,
+      owner: string,
+      repo: string,
+      pullRequestNumber: number,
+      query?: PageQueryParams,
+    ) =>
+      withQuery(
+        `${backend(
+          `/api/v1/scm/connections/${connectionId}/repositories/${segment(owner)}/${segment(repo)}`,
+        )}/pull-requests/${pullRequestNumber}/files`,
+        { page: query?.page, size: query?.size },
+      ),
+
+    /**
+     * GET — the diff, already parsed into files, hunks and lines.
+     *
+     * Not paged: a diff is one indivisible provider response. It is bounded
+     * instead by a server-side parse budget, and `truncated` on the response
+     * says when that was reached.
+     */
+    pullRequestDiff: (
+      connectionId: number,
+      owner: string,
+      repo: string,
+      pullRequestNumber: number,
+    ) =>
+      `${backend(
+        `/api/v1/scm/connections/${connectionId}/repositories/${segment(owner)}/${segment(repo)}`,
+      )}/pull-requests/${pullRequestNumber}/diff`,
   },
 } as const;
+
+/** Zero-based `page` and a `size` the backend caps at 100. */
+export type PageQueryParams = {
+  page?: number | undefined;
+  size?: number | undefined;
+};
+
+export type RepositoryListQuery = PageQueryParams & {
+  search?: string | undefined;
+};
+
+export type PullRequestListQuery = RepositoryListQuery & {
+  /** One of `pullRequestStateFilters`. */
+  state?: string | undefined;
+};
+
+/**
+ * Encodes one path segment.
+ *
+ * Owner and repository names come from provider data rather than from user
+ * input, but they still reach a URL, so they are encoded rather than trusted.
+ * `encodeURIComponent` escapes `/`, which is the case that matters: a value
+ * containing one must not silently become two path segments and move the
+ * request to a different endpoint. The backend validates the same thing again —
+ * two independent checks, because this one is easy to forget at a new call site.
+ */
+function segment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+/**
+ * Appends the query parameters that are actually set.
+ *
+ * Omitting rather than sending empty values matters: the backend treats an
+ * absent `state` as "default to OPEN" and an absent `search` as "no filter",
+ * while `?search=` would be a filter matching the empty string if it were ever
+ * read literally. Building the string by hand rather than with `URLSearchParams`
+ * keeps this module free of assumptions about the runtime, since `middleware.ts`
+ * pulls it into the edge runtime.
+ */
+function withQuery(
+  path: string,
+  params: Record<string, string | number | undefined>,
+): string {
+  const pairs: string[] = [];
+
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === "") continue;
+    pairs.push(`${key}=${encodeURIComponent(String(value))}`);
+  }
+
+  return pairs.length === 0 ? path : `${path}?${pairs.join("&")}`;
+}
 
 /**
  * Sign-in providers the backend implements, in the order they are offered.
@@ -286,6 +467,56 @@ export const appRoutes = {
    */
   integration: (providerCode: string) =>
     `/integrations/${encodeURIComponent(providerCode)}`,
+
+  /* --------------------------------------------------------------------- *
+   * Repository browsing
+   *
+   * Routed under the provider rather than under a connection id, so the URL a
+   * user sees and shares is `/integrations/GITHUB/repositories` rather than
+   * `/connections/7/repositories`. The connection is still what the backend
+   * resolves against, so it rides along as the `connection` query parameter —
+   * optional, because one connection per provider is the common case and the
+   * pages default to the newest live one. It becomes load-bearing only when a
+   * user has linked two accounts on the same provider.
+   *
+   * Repositories are addressed as `owner/repo`, two segments, matching the
+   * backend. Build them from a repository's `fullName`, never from `name`:
+   * where a provider distinguishes a display name from a URL slug, `fullName`
+   * carries the slug and `name` does not.
+   * --------------------------------------------------------------------- */
+
+  /** Repository list for one provider. */
+  repositories: (providerCode: string, params?: RepositoryBrowseParams) =>
+    appendParams(
+      `/integrations/${encodeURIComponent(providerCode)}/repositories`,
+      params,
+    ),
+
+  /** One repository, with its pull requests. */
+  repository: (
+    providerCode: string,
+    owner: string,
+    repo: string,
+    params?: RepositoryBrowseParams,
+  ) =>
+    appendParams(
+      `/integrations/${encodeURIComponent(providerCode)}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
+      params,
+    ),
+
+  /** One pull request: details, changed files and diff. */
+  pullRequest: (
+    providerCode: string,
+    owner: string,
+    repo: string,
+    pullRequestNumber: number,
+    params?: RepositoryBrowseParams,
+  ) =>
+    appendParams(
+      `/integrations/${encodeURIComponent(providerCode)}/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pull-requests/${pullRequestNumber}`,
+      params,
+    ),
+
   /**
    * Where the backend sends the browser after a provider consent round trip.
    *
@@ -319,6 +550,93 @@ export const appRoutes = {
    */
   signOut: "/api/auth/signout",
 } as const;
+
+/**
+ * Query parameters the repository browsing pages read.
+ *
+ * All optional and all defaulted server-side, so a bare URL is always valid —
+ * which is what makes these pages linkable and the browser's back button
+ * behave. Page numbers here are **1-based**, because they are user-facing; the
+ * backend's are zero-based and the service layer translates.
+ */
+export type RepositoryBrowseParams = {
+  /** Which connection to read through. Defaults to the newest live one. */
+  connection?: number | undefined;
+  /** 1-based. */
+  page?: number | undefined;
+  search?: string | undefined;
+  /** Pull-request state filter; see `pullRequestStateFilters`. */
+  state?: string | undefined;
+};
+
+/** Parameter names the repository pages read, in one place so pages and links agree. */
+export const repositoryBrowseParams = {
+  connection: "connection",
+  page: "page",
+  search: "search",
+  state: "state",
+} as const;
+
+/**
+ * The state filters the UI offers, in the order they are shown.
+ *
+ * Mirrors the backend's `PullRequestStateFilter`. `ALL` is last because it is
+ * the escape hatch rather than the default — the backend defaults to `OPEN`,
+ * which is what a reviewer arrives to look at.
+ */
+export const pullRequestStateFilters = [
+  "OPEN",
+  "MERGED",
+  "CLOSED",
+  "ALL",
+] as const;
+
+export type PullRequestStateFilter = (typeof pullRequestStateFilters)[number];
+
+export function isPullRequestStateFilter(
+  value: string | undefined,
+): value is PullRequestStateFilter {
+  return (
+    value !== undefined &&
+    (pullRequestStateFilters as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Appends browse parameters, skipping defaults.
+ *
+ * `page=1` and an empty search are left off so the canonical URL for a first
+ * page has no query string at all. Without that, navigating between filters
+ * would accumulate noise and two URLs showing the same thing would not look
+ * alike.
+ */
+function appendParams(
+  path: string,
+  params: RepositoryBrowseParams | undefined,
+): string {
+  if (!params) return path;
+
+  const pairs: string[] = [];
+
+  if (params.connection !== undefined) {
+    pairs.push(`${repositoryBrowseParams.connection}=${params.connection}`);
+  }
+  if (params.state !== undefined) {
+    pairs.push(
+      `${repositoryBrowseParams.state}=${encodeURIComponent(params.state)}`,
+    );
+  }
+  if (params.search !== undefined && params.search !== "") {
+    pairs.push(
+      `${repositoryBrowseParams.search}=${encodeURIComponent(params.search)}`,
+    );
+  }
+  if (params.page !== undefined && params.page > 1) {
+    pairs.push(`${repositoryBrowseParams.page}=${params.page}`);
+  }
+
+  return pairs.length === 0 ? path : `${path}?${pairs.join("&")}`;
+}
 
 /**
  * What middleware guards, and how it remembers where the user was going.

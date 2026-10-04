@@ -186,8 +186,12 @@ export type ScmCapabilityCode =
  * supported while its operation row is missing, so the two lists are reported
  * separately rather than being collapsed into one.
  *
- * These are internal to the backend's outbound client — there is no REST
- * endpoint that invokes them yet.
+ * These name the backend's *outbound* calls, not its own routes. The repository
+ * endpoints invoke the six read operations — `LIST_REPOSITORIES` through
+ * `GET_PULL_REQUEST_DIFF` — but a client never names an operation itself; it
+ * calls a REST route and the backend chooses. The write operations
+ * (`CREATE_WEBHOOK`, `CREATE_PR_COMMENT`, `CREATE_PR_REVIEW`) are still
+ * unreachable from any route.
  */
 export type ScmOperationCode =
   | "GET_CURRENT_ACCOUNT"
@@ -365,4 +369,386 @@ export function needsReconnect(connection: ScmConnectionResponse): boolean {
     connection.connectionStatus === "REVOKED" ||
     connection.connectionStatus === "ERROR"
   );
+}
+
+/* ------------------------------------------------------------------------- *
+ * Repository Management module
+ *
+ * Source of truth:
+ *   common/response/PageResponse.java
+ *   repository/dto/{RepositoryResponse,RepositoryOwner,RepositoryVisibility}.java
+ *   repository/dto/{RepositoryRefResponse,ScmResourceProvider}.java
+ *   repository/dto/{PullRequestResponse,PullRequestAuthor,PullRequestFileResponse}.java
+ *   repository/dto/{PullRequestDiffResponse,DiffFile,DiffHunk,DiffLine,DiffLineType}.java
+ *   repository/dto/PullRequestStateFilter.java
+ *   scm/common/model/{PullRequestState,FileChangeType}.java
+ *
+ * Unlike the connection and provider endpoints, **these paginate**: the
+ * collection endpoints answer a `PageResponse` inside `data`.
+ *
+ * Every DTO here is annotated `@JsonInclude(NON_NULL)`, so a field this file
+ * types as `| null` is in practice *absent* from the JSON rather than explicitly
+ * null. Typing them as nullable rather than optional is deliberate: it forces a
+ * call site to handle the missing case instead of letting `undefined` flow into
+ * a template and render "undefined".
+ * ------------------------------------------------------------------------- */
+
+/**
+ * `common/response/PageResponse.java`
+ *
+ * **`totalElements` and `totalPages` are frequently absent, and that is the
+ * contract rather than a gap.** These pages are filled from a provider that
+ * usually does not publish a total — GitHub's repository listing and
+ * Bitbucket's diffstat both say only "there is another page". The backend's
+ * options were to omit the total or invent one, and an invented total is worse
+ * because a client cannot tell it is wrong: it would render "1–20 of 20" over a
+ * list with three more pages.
+ *
+ * So: **page controls must be driven by `hasNext`, never by `totalPages`.**
+ * Treat a present total as a bonus used only to show a count.
+ *
+ * There is a second meaning to their absence on a *search* response. The
+ * backend applies a search term over a bounded scan of provider pages; a scan
+ * that reached the end of the data knows the exact total and reports it, while
+ * one stopped by the bound reports none. A missing total on a search is
+ * therefore the signal that more matches may exist beyond what was looked at.
+ *
+ * `page` is zero-based, matching the backend and the query parameter. The UI
+ * routes use 1-based page numbers because they are user-facing; `lib/repositories`
+ * translates between the two.
+ */
+export type PageResponse<T> = {
+  content: T[];
+  /** Zero-based. */
+  page: number;
+  /** The requested size. The page may hold fewer items; never more. */
+  size: number;
+  /** Absent unless the total is genuinely known. */
+  totalElements?: number;
+  /** Absent whenever `totalElements` is. */
+  totalPages?: number;
+  first: boolean;
+  /** Always `!hasNext`, so it is accurate even with no total. */
+  last: boolean;
+  hasNext: boolean;
+};
+
+/**
+ * `repository/dto/ScmResourceProvider.java`
+ *
+ * Carried on every repository and pull request rather than inferred from the
+ * connection that was queried, because the same repository name can exist on two
+ * providers and a client that aggregates results needs the discriminator
+ * attached to the data.
+ *
+ * `code` is stable and may be used to key presentation; it must not be branched
+ * on for behaviour.
+ */
+export type ScmResourceProvider = {
+  code: string;
+  name: string;
+};
+
+/**
+ * `repository/dto/RepositoryVisibility.java`
+ *
+ * `UNKNOWN` exists because a provider may omit the flag on a reduced payload.
+ * Rendering such a repository as public would be a misstatement about access
+ * control — the one field here where guessing is unacceptable.
+ */
+export type RepositoryVisibility = "PUBLIC" | "PRIVATE" | "UNKNOWN";
+
+/**
+ * `repository/dto/RepositoryOwner.java`
+ *
+ * `name` is the **addressable** owner segment (a GitHub login, a Bitbucket
+ * workspace slug), not a display name — it is what the backend substitutes when
+ * it asks a provider for this repository, so a link built from it resolves.
+ */
+export type RepositoryOwner = {
+  id?: string;
+  name?: string;
+  avatarUrl?: string;
+};
+
+/**
+ * `repository/dto/RepositoryResponse.java`
+ *
+ * **`id` is not an address.** It is the provider's own repository identifier,
+ * useful for correlation and stable across renames, but no backend route accepts
+ * it. Build nested links from `fullName` — or equivalently `owner.name` plus
+ * `name` — because that is what provider APIs address repositories by.
+ *
+ * Note specifically that `fullName` is built from the provider's URL slug while
+ * `name` can be a display name, so splitting `fullName` is correct where using
+ * `name` would 404.
+ *
+ * Carries no credential material: no token, no token reference, no connection
+ * secret. `cloneUrl` is the public clone address and nothing here clones.
+ */
+export type RepositoryResponse = {
+  /** Provider's repository id. Correlation only — see the note above. */
+  id: string;
+  name: string;
+  /** Owner-qualified name; the addressable key. */
+  fullName: string;
+  description?: string;
+  defaultBranch?: string;
+  visibility: RepositoryVisibility;
+  webUrl?: string;
+  cloneUrl?: string;
+  owner?: RepositoryOwner;
+  provider: ScmResourceProvider;
+  /** ISO-8601 instant, or absent when the provider reported none readably. */
+  updatedAt?: string;
+};
+
+/**
+ * `repository/dto/RepositoryRefResponse.java`
+ *
+ * Attached to a pull-request **detail** response so the page can name and link
+ * back to its repository. Deliberately not a full `RepositoryResponse`: that
+ * would cost a second provider call per pull request.
+ */
+export type RepositoryRefResponse = {
+  name: string;
+  fullName: string;
+  owner: string;
+  provider: ScmResourceProvider;
+};
+
+/**
+ * `scm/common/model/PullRequestState.java`
+ *
+ * Canonical, with "merged" already resolved by the backend. Providers disagree
+ * on whether merged is a state or a closed pull request with a merge timestamp;
+ * the backend settles it, so a client never sees a merged pull request labelled
+ * `CLOSED` and the state shown always matches the state filtered on.
+ *
+ * `UNKNOWN` is the lenient fallback for a provider value the backend could not
+ * map — one lost field rather than a failed request.
+ */
+export type PullRequestState = "OPEN" | "CLOSED" | "MERGED" | "UNKNOWN";
+
+/**
+ * `repository/dto/PullRequestAuthor.java`
+ *
+ * Both fields are optional and the whole object may be absent: a pull request
+ * opened by a since-deleted account genuinely has no author. Render "Unknown
+ * author" rather than assuming it is there.
+ */
+export type PullRequestAuthor = {
+  id?: string;
+  username?: string;
+};
+
+/**
+ * `repository/dto/PullRequestResponse.java`
+ *
+ * **`number`, not `id`, is the address.** On at least one provider they are
+ * different integers and only `number` is accepted in a pull-request URL.
+ *
+ * `repository` is present on the detail response and absent from list rows,
+ * where it would repeat identically on every item.
+ */
+export type PullRequestResponse = {
+  /** Provider's global id. Correlation only. */
+  id: string;
+  /** The addressable, user-visible number. */
+  number: number;
+  title?: string;
+  /** Author-written body. May be long; may be absent. */
+  description?: string;
+  state: PullRequestState;
+  author?: PullRequestAuthor;
+  sourceBranch?: string;
+  targetBranch?: string;
+  sourceCommitSha?: string;
+  targetCommitSha?: string;
+  /** ISO-8601 instant. */
+  createdAt?: string;
+  updatedAt?: string;
+  /** Set only for a merged pull request, where the provider reports it. */
+  mergedAt?: string;
+  webUrl?: string;
+  /** Detail responses only. */
+  repository?: RepositoryRefResponse;
+};
+
+/**
+ * `scm/common/model/FileChangeType.java`
+ *
+ * `UNKNOWN` is the fallback for an unmapped provider status.
+ */
+export type FileChangeType =
+  | "ADDED"
+  | "MODIFIED"
+  | "REMOVED"
+  | "RENAMED"
+  | "UNKNOWN";
+
+/**
+ * `repository/dto/PullRequestFileResponse.java`
+ *
+ * Per-file patches are **not** included even where a provider volunteers them
+ * inline, because only some do — serving them would make the response shape
+ * depend on which provider answered. The diff endpoint is the single source of
+ * patch content.
+ *
+ * `changes` is `additions + deletions`, computed server-side. It stays absent
+ * when the provider reported neither count, rather than becoming a confident
+ * zero for a file that certainly did change.
+ */
+export type PullRequestFileResponse = {
+  /** Current path; for a deletion, the path before removal. */
+  path: string;
+  /** Set for a rename or move. */
+  previousPath?: string;
+  status: FileChangeType;
+  additions?: number;
+  deletions?: number;
+  changes?: number;
+};
+
+/**
+ * `repository/dto/DiffLineType.java`
+ *
+ * Three values, not four: the `\ No newline at end of file` marker annotates the
+ * preceding line rather than being a line of either version of the file, so the
+ * backend's parser drops it instead of giving it a type.
+ */
+export type DiffLineType = "ADDED" | "REMOVED" | "CONTEXT";
+
+/**
+ * `repository/dto/DiffLine.java`
+ *
+ * Both line numbers are resolved server-side and **either may be absent**: an
+ * added line has no number in the old file and a removed line none in the new
+ * one. Having both is what lets the same payload drive a unified view and a
+ * side-by-side one without a client counting from the hunk header.
+ *
+ * `content` has its leading `+`, `-` or space marker already stripped — the
+ * marker is redundant once `type` exists, and leaving it in would corrupt
+ * indentation measurement.
+ */
+export type DiffLine = {
+  type: DiffLineType;
+  /** Line text, marker stripped. An empty line is `""`. */
+  content: string;
+  /** 1-based in the old file; absent for an addition. */
+  oldLineNumber?: number;
+  /** 1-based in the new file; absent for a deletion. */
+  newLineNumber?: number;
+};
+
+/**
+ * `repository/dto/DiffHunk.java`
+ *
+ * Hunks stay separate rather than being flattened per file, because the gap
+ * between two of them is meaningful — it is skipped, unchanged code — which is
+ * what lets a viewer draw the "…" divider.
+ */
+export type DiffHunk = {
+  /** The raw `@@ … @@ section` line; the trailing section heading is useful context. */
+  header: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: DiffLine[];
+};
+
+/**
+ * `repository/dto/DiffFile.java`
+ *
+ * **`binary` and `truncated` both mean "no hunks here", for different reasons,
+ * and must be rendered differently.** A binary file has no textual diff and
+ * never will; a truncated one has one that was too large to include. Showing
+ * either as an empty file would report a size limit as "nothing changed".
+ */
+export type DiffFile = {
+  path: string;
+  previousPath?: string;
+  status: FileChangeType;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  /** This file's hunks were dropped because the parse budget ran out. */
+  truncated: boolean;
+  hunks: DiffHunk[];
+};
+
+/**
+ * `repository/dto/PullRequestDiffResponse.java`
+ *
+ * The provider returns unified-diff text; the backend parses it. That split is
+ * deliberate — the parse is identical for every provider and every client, it
+ * holds the fiddly line-numbering arithmetic, and doing it server-side means the
+ * browser never receives a multi-megabyte string it must walk before showing the
+ * first file.
+ *
+ * This is **not** a review format. No findings, severities or suggestions — only
+ * what changed.
+ */
+export type PullRequestDiffResponse = {
+  pullRequestNumber: number;
+  files: DiffFile[];
+  totalFiles: number;
+  totalAdditions: number;
+  totalDeletions: number;
+  /**
+   * Some files were dropped or left without hunks.
+   *
+   * Worth surfacing: a diff viewer showing 40 of 900 changed files without
+   * saying so would read as a small pull request.
+   */
+  truncated: boolean;
+};
+
+/**
+ * Error codes the Repository Management endpoints add to `ScmErrorCode`.
+ *
+ * Each exists because it calls for a different response from the client, which
+ * is why they are not one generic failure:
+ *
+ * - `SCM_CONNECTION_NOT_ACTIVE` — 409. The caller owns the connection but its
+ *   credentials are gone. Offer reconnect; do **not** report it as missing.
+ * - `SCM_REQUEST_INVALID` — 400. A page size out of range, or an unrecognised
+ *   state filter.
+ * - `SCM_REPOSITORY_NOT_FOUND` / `SCM_PULL_REQUEST_NOT_FOUND` — 404. Absent, or
+ *   invisible to this credential; providers do not distinguish the two and
+ *   neither does the backend.
+ * - `SCM_PROVIDER_RESOURCE_NOT_FOUND` — 404. The engine's generic form, reached
+ *   only where the request named no specific resource.
+ */
+export type RepositoryErrorCode =
+  | "SCM_CONNECTION_NOT_ACTIVE"
+  | "SCM_REQUEST_INVALID"
+  | "SCM_PROVIDER_RESOURCE_NOT_FOUND"
+  | "SCM_REPOSITORY_NOT_FOUND"
+  | "SCM_PULL_REQUEST_NOT_FOUND";
+
+/**
+ * Splits a repository's `fullName` into the two path segments the API addresses
+ * it by.
+ *
+ * Splits on the **last** separator so the owner segment survives intact, matching
+ * the backend's `RepositoryRef.parse`. Returns `null` for a value that is not
+ * owner-qualified, so a caller renders a 404 rather than requesting a malformed
+ * URL.
+ *
+ * Use this rather than `{ owner: repo.owner?.name, name: repo.name }`: where a
+ * provider distinguishes a display name from a URL slug, `fullName` carries the
+ * slug and `name` does not.
+ */
+export function splitRepositoryFullName(
+  fullName: string,
+): { owner: string; name: string } | null {
+  const separator = fullName.lastIndexOf("/");
+  if (separator <= 0 || separator === fullName.length - 1) return null;
+
+  return {
+    owner: fullName.slice(0, separator),
+    name: fullName.slice(separator + 1),
+  };
 }
