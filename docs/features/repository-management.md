@@ -34,6 +34,10 @@ Read [`../README.md`](../README.md) first for the shared rules this feature reli
 ```
 /integrations                           connections hub (SCM integration feature)
      │  "Browse repositories" on a live connection
+     │
+     │            /repositories                 sidebar entry — picks an account,
+     │                 │                        or redirects straight through
+     ├─────────────────┘
      ▼
 /integrations/GITHUB/repositories?connection=7
      │  click a repository
@@ -48,13 +52,32 @@ Read [`../README.md`](../README.md) first for the shared rules this feature reli
 
 ## Routes
 
-| Route                                                      | Kind | Purpose                               |
-| ---------------------------------------------------------- | ---- | ------------------------------------- |
-| `/integrations/[providerCode]/repositories`                | Page | Repository list, search, paging       |
-| `/integrations/[providerCode]/repositories/[owner]/[repo]` | Page | Repository detail + pull-request list |
-| `…/[owner]/[repo]/pull-requests/[pullRequestNumber]`       | Page | PR detail + changed files + diff      |
+| Route                                                      | Kind | Purpose                                   |
+| ---------------------------------------------------------- | ---- | ----------------------------------------- |
+| `/repositories`                                            | Page | Account chooser — "select SCM connection" |
+| `/integrations/[providerCode]/repositories`                | Page | Repository list, search, paging           |
+| `/integrations/[providerCode]/repositories/[owner]/[repo]` | Page | Repository detail + pull-request list     |
+| `…/[owner]/[repo]/pull-requests/[pullRequestNumber]`       | Page | PR detail + changed files + diff          |
 
-Each has its own `loading.tsx`. They exist to _override_ the one above: a `loading.tsx` applies to its segment and everything nested beneath it, so without them the provider-detail skeleton (a scope list and two capability columns) would stand in for a list of repository cards, and the repository-list skeleton would stand in for a diff. The shapes differ enough that the layout would jump when real content arrived.
+Each has its own `loading.tsx`. The nested ones exist to _override_ the one above: a `loading.tsx` applies to its segment and everything beneath it, so without them the provider-detail skeleton (a scope list and two capability columns) would stand in for a list of repository cards, and the repository-list skeleton would stand in for a diff. The shapes differ enough that the layout would jump when real content arrived.
+
+### `/repositories` — the account chooser
+
+The feature has **two entry points**, and they answer the same question differently.
+
+From the integrations hub, a connection card's "Browse repositories" already knows which account you mean, so it links straight into that account's list.
+
+From the sidebar, nothing is known yet — so `/repositories` resolves it:
+
+- **one usable connection → redirect straight through.** A one-item picker is a dead click.
+- **several → a short list of accounts**, which is the only place the choice is genuinely the user's.
+- **none → an empty state** pointing at connecting one.
+
+`EXPIRED` and `REVOKED` connections are excluded from the list and named in a banner beneath it. Offering them would fail on the first provider call; omitting them silently would leave a user with two accounts wondering where the second went.
+
+It is **top-level rather than nested under `/integrations`** because the sidebar needs a destination the user is not already on. Before it existed, the Repositories row pointed at `/integrations` — so clicking it from the hub, which is the page it is reached from, **did nothing at all**.
+
+It deliberately does **not** aggregate repositories across connections. That would mean a provider call per connection on every load, and paging a merged list whose sources page independently and publish no totals is not a solved problem. The page exists to get out of the way, not to be a screen.
 
 **No Route Handlers and no Server Actions.** This feature is entirely reads, so there is nothing to write and nothing that needs a cross-origin navigation. Every page is a Server Component.
 
@@ -310,6 +333,9 @@ Field names are verbatim from the Java DTOs. Every DTO is `@JsonInclude(NON_NULL
 
 ```
 src/
+├── app/(app)/repositories/
+│   ├── page.tsx                                   account chooser
+│   └── loading.tsx
 ├── app/(app)/integrations/[providerCode]/repositories/
 │   ├── page.tsx                                   repository list
 │   ├── loading.tsx
@@ -340,7 +366,8 @@ src/
 
 - `src/lib/api/endpoints.ts` — six backend paths, three app routes, `pullRequestStateFilters`, `repositoryBrowseParams`.
 - `src/components/scm/connection-card.tsx` — the **"Browse repositories"** link, which is the feature's entry point. Offered only on a live connection, and carries the connection id so the page reads through _that_ account rather than defaulting to the newest.
-- `src/components/app/app-shell.tsx` — `NavItem` gained `activeWhen`, because Repositories and Integrations now share a destination and prefix matching alone would light up both rows at once, putting two `aria-current` elements in the nav.
+- `src/components/app/app-shell.tsx` — the Repositories row points at `/repositories` and is no longer a disabled "Soon". `NavItem` gained `activeWhen` because the feature spans two route shapes — the chooser at `/repositories` and the lists nested under `/integrations/{code}/repositories` — and prefix matching on one `href` would either miss half of them or light up Integrations at the same time, putting two `aria-current` elements in the nav.
+- `src/lib/api/endpoints.ts` — `routeGuards.protectedPrefixes` gained `/repositories`.
 
 ---
 
@@ -381,7 +408,6 @@ The default stays the seed row documented in `authenticated.spec.ts`. Every test
 - **No component-level tests for the diff viewer.** There is no unit test runner in this project, and the viewer's input cannot be faked through the browser. The data it renders is covered by 16 backend parser tests; the rendering itself is covered only by the end-to-end flow test, which asserts that a diff table or an explaining message is present rather than checking individual lines.
 - **Search reach is bounded** at 500 items by default. A match in a repository older than that is not found. The empty state says so rather than claiming there are no matches.
 - **No cross-repository pull-request view.** The sidebar's "Pull requests" row is still a disabled "Soon" for that reason — pull requests exist only inside a repository, and there is no backend endpoint for an inbox.
-- **Sidebar "Repositories" points at the integrations hub**, because repository browsing has no provider-agnostic landing page: a repository is only reachable through a connection, so choosing one is genuinely the first step.
 - **`MERGED` on GitHub is approximate as a filter.** It maps to `closed` at the provider, so the list may include closed-but-unmerged pull requests. Individual states are still correct, because the backend resolves them from `mergedAt`.
 - **No caching.** Every page load calls the provider. This is deliberate for a first implementation — measuring real usage and rate-limit pressure comes before adding a cache — but it means a provider's rate limit is the practical ceiling on how fast these pages can be used.
 - **The diff is capped** at 20,000 lines and 300 files. Beyond that the response is marked `truncated` and the UI says so.

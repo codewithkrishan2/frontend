@@ -60,7 +60,13 @@ Declared once, in `endpoints.ts`, and consumed by `middleware.ts`:
 
 ```ts
 export const routeGuards = {
-  protectedPrefixes: ["/dashboard", "/integrations", "/scm", "/settings"],
+  protectedPrefixes: [
+    "/dashboard",
+    "/integrations",
+    "/repositories",
+    "/scm",
+    "/settings",
+  ],
   guestOnlyPaths: [appRoutes.login],
   returnToParam: "next",
 } as const;
@@ -86,9 +92,9 @@ Two deliberate choices:
 
 **The mobile sheet closes on tap**, via an `onNavigate` callback the desktop rail does not pass, rather than by watching `pathname` in an effect. Closing is a consequence of the user's click, so it belongs in the handler.
 
-Nav shows Pull requests and Settings as disabled rows with a "Soon" badge — labelled rather than hidden, so the product's shape is visible without implying the screens exist. Repositories is live, and points at the integrations hub because repository browsing has no provider-agnostic landing page: a repository is only reachable through a connection, so choosing one is the first step.
+Nav shows Pull requests and Settings as disabled rows with a "Soon" badge — labelled rather than hidden, so the product's shape is visible without implying the screens exist. Repositories is live and points at `/repositories`, which resolves which connected account to browse and redirects straight through when there is only one.
 
-That makes two rows share a destination, which is why `NavItem` carries an optional `activeWhen`. Prefix matching on `href` alone would light up both Integrations and Repositories on every page under `/integrations`, putting two `aria-current` elements in the nav and leaving a reader unable to tell where they are.
+`NavItem` carries an optional `activeWhen` because the repository feature spans two route shapes — the chooser at `/repositories` and the per-provider lists nested under `/integrations/{code}/repositories`. Prefix matching on a single `href` would either miss half of them or light up Integrations at the same time, putting two `aria-current` elements in the nav and leaving a reader unable to tell where they are.
 
 ```
 src/components/app/

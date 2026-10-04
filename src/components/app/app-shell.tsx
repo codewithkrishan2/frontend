@@ -54,8 +54,16 @@ type NavItem = {
   activeWhen?: (pathname: string) => boolean;
 };
 
-/** True on any repository-browsing route. */
+/**
+ * True on any repository-browsing route.
+ *
+ * Substring rather than prefix matching, because the feature spans two shapes:
+ * the account chooser at `/repositories`, and the per-provider lists nested at
+ * `/integrations/{code}/repositories/…`. Both are "Repositories" to a reader.
+ */
 const isRepositoryRoute = (pathname: string) =>
+  pathname === appRoutes.repositoriesHome ||
+  pathname.startsWith(`${appRoutes.repositoriesHome}/`) ||
   pathname.includes("/repositories");
 
 const navSections: readonly { heading: string; items: readonly NavItem[] }[] = [
@@ -80,13 +88,15 @@ const navSections: readonly { heading: string; items: readonly NavItem[] }[] = [
     heading: "Review",
     items: [
       {
-        // Points at the hub because that is genuinely the first step: a
-        // repository is only reachable through a connection, so the hub's
-        // per-account "Browse repositories" is the entry point. It highlights on
-        // the browsing routes rather than on the hub itself.
+        // `/repositories` resolves which connection to browse through and
+        // redirects straight on when there is only one, so this row always goes
+        // somewhere. It previously pointed at the hub, which meant clicking it
+        // while already on the hub did nothing.
         label: "Repositories",
-        href: appRoutes.integrations,
+        href: appRoutes.repositoriesHome,
         icon: RepositoriesIcon,
+        // Still an explicit test, because the per-provider lists live under
+        // `/integrations/{code}/repositories` rather than under this row's href.
         activeWhen: isRepositoryRoute,
       },
       {

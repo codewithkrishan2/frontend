@@ -485,6 +485,22 @@ export const appRoutes = {
    * carries the slug and `name` does not.
    * --------------------------------------------------------------------- */
 
+  /**
+   * The "select SCM connection" step, and the sidebar's Repositories
+   * destination.
+   *
+   * Exists because repository browsing has no provider-agnostic list — a
+   * repository is only reachable through a connection — so something has to turn
+   * "show me repositories" into "through which authorization?". It redirects
+   * straight through when there is only one usable connection, so the common
+   * case never sees it.
+   *
+   * Deliberately top-level rather than nested under `/integrations`: a nav row
+   * pointing at a page the user may already be on is a dead click, which is
+   * exactly what it was before this route existed.
+   */
+  repositoriesHome: "/repositories",
+
   /** Repository list for one provider. */
   repositories: (providerCode: string, params?: RepositoryBrowseParams) =>
     appendParams(
@@ -651,7 +667,13 @@ function appendParams(
  */
 export const routeGuards = {
   /** Require a session. Matched as exact path or path prefix. */
-  protectedPrefixes: ["/dashboard", "/integrations", "/scm", "/settings"],
+  protectedPrefixes: [
+    "/dashboard",
+    "/integrations",
+    "/repositories",
+    "/scm",
+    "/settings",
+  ],
   /** Bounce a signed-in user away from these. */
   guestOnlyPaths: [appRoutes.login],
   /** Carries the originally requested path onto the sign-in URL. */

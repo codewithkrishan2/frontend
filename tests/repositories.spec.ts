@@ -100,6 +100,52 @@ async function seededUserAvailable(
   return response.status() === 200;
 }
 
+/**
+ * Returns the application nav, opening the mobile sheet first if that is where
+ * it lives at this viewport.
+ *
+ * Needed because the desktop rail is `hidden lg:flex` — below `lg` it is
+ * `display: none`, which takes it out of the accessibility tree entirely, so
+ * `getByRole("navigation")` does not match it. Opening the sheet is not a
+ * workaround: it is how a user on a phone reaches the nav, so this exercises the
+ * real path at each breakpoint rather than asserting only the desktop one.
+ *
+ * Must be called after every navigation: a full page load resets the sheet.
+ */
+/** Tailwind's `lg`, the breakpoint at which `AppShell` swaps sheet for rail. */
+const RAIL_BREAKPOINT_PX = 1024;
+
+async function applicationNav(page: Page) {
+  const nav = page.getByRole("navigation", { name: "Application" });
+  const width = page.viewportSize()?.width ?? RAIL_BREAKPOINT_PX;
+
+  // Decided from the viewport rather than by probing which control is on
+  // screen. `isVisible()` does not auto-wait, so a probe run immediately after
+  // a navigation races the streaming render and can take the wrong branch —
+  // which is how this helper first went wrong. The breakpoint is a fact about
+  // the layout and needs no waiting at all.
+  if (width >= RAIL_BREAKPOINT_PX) {
+    await expect(nav).toBeVisible();
+    return nav;
+  }
+
+  const toggle = page.getByRole("button", { name: "Open navigation" });
+  await expect(toggle).toBeVisible();
+
+  // The click is retried rather than issued once, because the sheet's open
+  // state lives in a client component: a click that lands before hydration hits
+  // a button with no handler attached and is silently a no-op. Waiting for
+  // "networkidle" would not help — hydration is not a network event. `toPass`
+  // re-clicks until the sheet actually opens, which is also what a real user
+  // does.
+  await expect(async () => {
+    await toggle.click();
+    await expect(nav).toBeVisible({ timeout: 1_000 });
+  }).toPass({ timeout: 15_000 });
+
+  return nav;
+}
+
 async function installSession(page: Page, token: string) {
   await page.context().addCookies([
     { name: COOKIES.accessToken, value: token, url: APP_ORIGIN },
@@ -135,6 +181,36 @@ async function liveConnection(
     (connection) => connection.connectionStatus === "ACTIVE",
   );
   return live ? { id: live.id, providerCode: live.providerCode } : null;
+}
+
+/**
+ * Every connection the account chooser would offer.
+ *
+ * `ACTIVE` only — the chooser excludes `EXPIRED` and `REVOKED`, because their
+ * credentials cannot be used and offering them would fail on the first provider
+ * call.
+ */
+async function usableConnections(
+  request: APIRequestContext,
+  token: string,
+): Promise<LiveConnection[]> {
+  const response = await request.get(`${BACKEND}/api/v1/scm/connections`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (response.status() !== 200) return [];
+
+  const connections: {
+    id: number;
+    providerCode: string;
+    connectionStatus: string;
+  }[] = (await response.json()).data ?? [];
+
+  return connections
+    .filter((connection) => connection.connectionStatus === "ACTIVE")
+    .map((connection) => ({
+      id: connection.id,
+      providerCode: connection.providerCode,
+    }));
 }
 
 function repositoriesUrl(connectionId: number, query = ""): string {
@@ -378,6 +454,7 @@ test.describe("repository pages without a connection", () => {
   test.use({ colorScheme: "dark" });
 
   const guardedPaths = [
+    "/repositories",
     "/integrations/GITHUB/repositories",
     "/integrations/GITHUB/repositories/acme/api",
     "/integrations/GITHUB/repositories/acme/api/pull-requests/12",
@@ -470,6 +547,125 @@ test.describe("repository pages without a connection", () => {
     await expect(
       page.getByRole("heading", { name: /not found/i }),
     ).toBeVisible();
+  });
+
+  test("the Repositories nav row navigates rather than doing nothing", async ({
+    page,
+    request,
+  }) => {
+    const token = mintToken();
+    test.skip(
+      !(await seededUserAvailable(request, token)),
+      "seeded integration test user not present",
+    );
+
+    await installSession(page, token);
+    await page.goto("/integrations");
+
+    const nav = await applicationNav(page);
+    const row = nav.getByRole("link", { name: "Repositories" });
+
+    // The regression this guards: the row used to point at /integrations, so
+    // clicking it while already on the hub — the page it is reached from — did
+    // nothing at all.
+    await expect(row).toHaveAttribute("href", "/repositories");
+
+    await row.click();
+    await expect(page).not.toHaveURL(/\/integrations$/);
+
+    await expect(
+      page.getByRole("main").getByRole("heading", { name: "Repositories" }),
+    ).toBeVisible();
+  });
+
+  test("exactly one nav row claims to be the current page", async ({
+    page,
+    request,
+  }) => {
+    const token = mintToken();
+    test.skip(
+      !(await seededUserAvailable(request, token)),
+      "seeded integration test user not present",
+    );
+
+    await installSession(page, token);
+
+    // Repositories and Integrations are adjacent in the tree, so prefix
+    // matching alone would light up both on every page under /integrations —
+    // two `aria-current` elements, and a reader unable to tell where they are.
+    for (const path of [
+      "/integrations",
+      "/repositories",
+      "/integrations/GITHUB/repositories",
+    ]) {
+      await page.goto(path);
+      const nav = await applicationNav(page);
+      await expect(nav.locator("[aria-current]"), path).toHaveCount(1);
+    }
+  });
+
+  test("the account chooser lists every usable connection", async ({
+    page,
+    request,
+  }) => {
+    const token = mintToken();
+    test.skip(
+      !(await seededUserAvailable(request, token)),
+      "seeded integration test user not present",
+    );
+
+    const connections = await usableConnections(request, token);
+    test.skip(
+      connections.length < 2,
+      "fewer than two usable connections, so the chooser redirects straight through",
+    );
+
+    await installSession(page, token);
+    await page.goto("/repositories");
+
+    const main = page.getByRole("main");
+    await expect(main.getByRole("heading", { name: "Repositories" })).toBeVisible();
+
+    for (const connection of connections) {
+      // Asserted by href rather than by accessible name, because the href is
+      // what has to be right: exactly one link per account, each carrying that
+      // account's connection id so the next page reads through the account the
+      // user actually picked rather than defaulting to the newest.
+      //
+      // toHaveCount auto-waits; a bare `count()` does not, and racing the
+      // streaming render is how this test first went wrong.
+      await expect(
+        main.locator(`a[href*="connection=${connection.id}"]`),
+        `connection ${connection.id}`,
+      ).toHaveCount(1);
+    }
+  });
+
+  test("a single usable connection is redirected past the chooser", async ({
+    page,
+    request,
+  }) => {
+    const token = mintToken();
+    test.skip(
+      !(await seededUserAvailable(request, token)),
+      "seeded integration test user not present",
+    );
+
+    const connections = await usableConnections(request, token);
+    test.skip(
+      connections.length !== 1,
+      "needs exactly one usable connection to observe the redirect",
+    );
+
+    await installSession(page, token);
+    await page.goto("/repositories");
+
+    // A one-item picker is a dead click, so the common case never sees it.
+    await expect(page).toHaveURL(
+      new RegExp(
+        `/integrations/${connections[0]!.providerCode}/repositories\\?connection=${connections[0]!.id}`,
+      ),
+    );
   });
 
   test("the integrations hub offers repository browsing on a live connection", async ({
