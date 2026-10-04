@@ -257,6 +257,13 @@ const failureMessages: Record<string, string> = {
     "Access was withdrawn at the provider. Reconnect to grant it again.",
   SCM_REPOSITORY_NOT_FOUND:
     "That repository could not be found through this connection. It may have been renamed or moved, or this account may no longer have access to it.",
+  // Distinct from the above on purpose: nothing is wrong with a *repository*, the
+  // account scope the listing reads from could not be resolved. Bitbucket removed
+  // every cross-workspace API, so repositories can only be listed inside a named
+  // workspace — and if this account has none, or its workspace slug differs from
+  // its login, there is nothing for us to list until that is set.
+  SCM_REPOSITORY_SCOPE_NOT_FOUND:
+    "We could not find the workspace that holds this account's repositories. Bitbucket can only list repositories inside a workspace, so this account needs one — check that it belongs to a workspace, and that the workspace name matches the account.",
   SCM_PULL_REQUEST_NOT_FOUND:
     "That pull request could not be found in this repository.",
   SCM_PROVIDER_RESOURCE_NOT_FOUND:

@@ -159,6 +159,34 @@ export type ScmConnectionStatus =
   "ACTIVE" | "EXPIRED" | "REVOKED" | "DISCONNECTED" | "ERROR";
 
 /**
+ * `scm/connection/dto/ScmConnectionReadiness.java`
+ *
+ * The backend's derived answer to "can this connection be used right now".
+ *
+ * **Prefer this over {@link ScmConnectionStatus}.** The raw status cannot answer
+ * that question on its own: `EXPIRED` is usable when the backend can refresh the
+ * credential silently and not usable when it cannot. Reading the status directly
+ * is what previously made this UI ask for consent the backend did not need.
+ *
+ * - `READY`                    — valid, or a provider whose tokens do not expire.
+ * - `EXPIRING`                 — within 15 minutes of expiry; the backend's sweep
+ *                                is already about to renew it. Advisory only.
+ * - `REFRESHABLE`              — expired, but renewable with no user involvement.
+ * - `REAUTHORIZATION_REQUIRED` — needs fresh consent.
+ * - `DISCONNECTED`             — removed here on purpose; do not prompt.
+ * - `ERROR`                    — held aside after repeated failures.
+ *
+ * Derived rather than stored, because it depends on the current time.
+ */
+export type ScmConnectionReadiness =
+  | "READY"
+  | "EXPIRING"
+  | "REFRESHABLE"
+  | "REAUTHORIZATION_REQUIRED"
+  | "DISCONNECTED"
+  | "ERROR";
+
+/**
  * `scm/provider/entity/ScmCapabilityCode.java`
  *
  * What a provider can do, as declared by its seed configuration. Returned
@@ -300,6 +328,15 @@ export type ScmConnectionResponse = {
   /** Login/handle at the provider, e.g. a GitHub username. */
   externalAccountName: string;
   connectionStatus: ScmConnectionStatus;
+  /**
+   * Derived readiness. Optional only because an older backend would omit it;
+   * `isLiveConnection` and `needsReconnect` fall back to `connectionStatus`.
+   */
+  readiness?: ScmConnectionReadiness;
+  /** Whether the backend will accept provider calls on this connection now. */
+  usable?: boolean;
+  /** Whether the user must go through consent again. */
+  reauthorizationRequired?: boolean;
   /** ISO-8601 instant, or null when the token does not expire. */
   tokenExpiry: string | null;
   /** ISO-8601 instant. */
@@ -357,15 +394,40 @@ export function isLiveConnection(connection: ScmConnectionResponse): boolean {
 }
 
 /**
+ * Whether a connection can be used for provider API calls right now.
+ *
+ * Reads the backend's derived `usable` flag in preference to the raw status,
+ * because the two disagree on the one case that matters: an `EXPIRED` connection
+ * the backend can refresh silently is usable, and treating it otherwise hides a
+ * working account behind a reconnect prompt.
+ */
+export function isUsableConnection(connection: ScmConnectionResponse): boolean {
+  if (typeof connection.usable === "boolean") {
+    return connection.usable;
+  }
+  // Fallback mirrors the backend's own ScmConnection.isUsable().
+  return (
+    connection.connectionStatus === "ACTIVE" ||
+    connection.connectionStatus === "EXPIRED"
+  );
+}
+
+/**
  * Whether a connection needs the user to go through consent again.
  *
- * `EXPIRED` is included even though the backend *can* refresh some providers:
- * nothing triggers a refresh from the UI today, so surfacing it as actionable is
- * honest rather than optimistic.
+ * `EXPIRED` is **not** included: the backend renews such a credential on demand
+ * and ahead of time, and reports it as `REFRESHABLE` — usable, no user action.
+ * Offering a reconnect there would ask the user to fix something that is not
+ * broken. Only `REAUTHORIZATION_REQUIRED` and `ERROR` are the user's problem.
  */
 export function needsReconnect(connection: ScmConnectionResponse): boolean {
+  if (typeof connection.reauthorizationRequired === "boolean") {
+    return connection.reauthorizationRequired || connection.readiness === "ERROR";
+  }
+  // Without the derived signal, a bare EXPIRED is ambiguous. Treated as not
+  // actionable, because the backend will try to refresh it before any call and
+  // the worst case is one failed request rather than a needless consent trip.
   return (
-    connection.connectionStatus === "EXPIRED" ||
     connection.connectionStatus === "REVOKED" ||
     connection.connectionStatus === "ERROR"
   );
@@ -726,6 +788,7 @@ export type RepositoryErrorCode =
   | "SCM_REQUEST_INVALID"
   | "SCM_PROVIDER_RESOURCE_NOT_FOUND"
   | "SCM_REPOSITORY_NOT_FOUND"
+  | "SCM_REPOSITORY_SCOPE_NOT_FOUND"
   | "SCM_PULL_REQUEST_NOT_FOUND";
 
 /**

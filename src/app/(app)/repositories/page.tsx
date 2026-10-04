@@ -9,7 +9,7 @@ import { appRoutes } from "@/lib/api/endpoints";
 import { ApiError } from "@/lib/api/errors";
 import {
   isLiveConnection,
-  needsReconnect,
+  isUsableConnection,
   type ScmConnectionResponse,
 } from "@/lib/api/types";
 import { getSession } from "@/lib/auth/session";
@@ -80,7 +80,10 @@ export default async function RepositoriesHomePage() {
   }
 
   const live = connections.filter(isLiveConnection);
-  const usable = live.filter((connection) => !needsReconnect(connection));
+  // The backend's own notion of usable, which includes a credential it can
+  // refresh silently. Filtering on "does not need reconnecting" would have been
+  // close but not identical, and the gap is exactly the REFRESHABLE case.
+  const usable = live.filter(isUsableConnection);
 
   // The single-account case, which is most accounts. Outside any try, because
   // redirect() throws a sentinel the framework catches and our own catch would

@@ -1,4 +1,7 @@
-import type { ScmConnectionStatus } from "@/lib/api/types";
+import type {
+  ScmConnectionReadiness,
+  ScmConnectionStatus,
+} from "@/lib/api/types";
 
 /**
  * Turning SCM enum values into something a person can read.
@@ -72,6 +75,9 @@ const statusPresentation: Record<ScmConnectionStatus, ScmStatusPresentation> = {
  * Takes a plain string because `connectionStatus` is serialised as
  * `status.name()` rather than a typed enum, so an unrecognised value is
  * possible if the backend gains a state before this app does.
+ *
+ * Prefer {@link scmConnectionState} where a whole connection is to hand: the
+ * raw status cannot tell a refreshable credential from a dead one.
  */
 export function scmStatus(status: string): ScmStatusPresentation {
   return (
@@ -82,6 +88,61 @@ export function scmStatus(status: string): ScmStatusPresentation {
       reconnectable: true,
     }
   );
+}
+
+/**
+ * Presentation keyed on the backend's derived readiness.
+ *
+ * `REFRESHABLE` is the entry that justifies this map existing alongside the
+ * status one. Its underlying status is `EXPIRED`, which the status map renders
+ * as a warning with a Reconnect button — but the backend renews such a
+ * credential without the user, so that button asks them to fix something that
+ * is not broken.
+ */
+const readinessPresentation: Record<
+  ScmConnectionReadiness,
+  ScmStatusPresentation
+> = {
+  READY: statusPresentation.ACTIVE,
+  EXPIRING: {
+    label: "Renewing soon",
+    tone: "pass",
+    description:
+      "The access token is close to expiry and will be renewed automatically. Nothing to do.",
+    reconnectable: false,
+  },
+  REFRESHABLE: {
+    label: "Renewing",
+    tone: "pass",
+    description:
+      "The access token aged out and is being renewed automatically from the stored refresh credential. Nothing to do.",
+    reconnectable: false,
+  },
+  REAUTHORIZATION_REQUIRED: {
+    label: "Reconnect needed",
+    tone: "fail",
+    description:
+      "The stored credentials can no longer be renewed, so the provider must grant access again. Your repositories are untouched.",
+    reconnectable: true,
+  },
+  DISCONNECTED: statusPresentation.DISCONNECTED,
+  ERROR: statusPresentation.ERROR,
+};
+
+/**
+ * Presentation for a connection, using readiness when the backend supplies it.
+ *
+ * Falls back to {@link scmStatus} so an older backend — or any response without
+ * the field — still renders correctly rather than blankly.
+ */
+export function scmConnectionState(connection: {
+  connectionStatus: string;
+  readiness?: ScmConnectionReadiness;
+}): ScmStatusPresentation {
+  if (connection.readiness && readinessPresentation[connection.readiness]) {
+    return readinessPresentation[connection.readiness];
+  }
+  return scmStatus(connection.connectionStatus);
 }
 
 /* ------------------------------------------------------------------------- *

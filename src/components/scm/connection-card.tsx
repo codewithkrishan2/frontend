@@ -11,7 +11,7 @@ import { type ScmConnectionResponse } from "@/lib/api/types";
 import {
   formatScmDate,
   formatScmDateTime,
-  scmStatus,
+  scmConnectionState,
   tokenExpiryState,
 } from "@/lib/scm/presentation";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ type ConnectionCardProps = {
  * reconnect offered instead.
  */
 export function ConnectionCard({ connection }: ConnectionCardProps) {
-  const status = scmStatus(connection.connectionStatus);
+  const status = scmConnectionState(connection);
   const disconnected = connection.connectionStatus === "DISCONNECTED";
   const expiry = tokenExpiryState(connection.tokenExpiry);
 
@@ -69,7 +69,10 @@ export function ConnectionCard({ connection }: ConnectionCardProps) {
               <h3 className="truncate text-base font-medium tracking-tight text-ink-50">
                 {accountLabel}
               </h3>
-              <ConnectionStatusBadge status={connection.connectionStatus} />
+              <ConnectionStatusBadge
+                status={connection.connectionStatus}
+                readiness={connection.readiness}
+              />
             </div>
 
             <p className="mt-1 truncate text-sm text-muted-foreground">

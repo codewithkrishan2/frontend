@@ -156,22 +156,30 @@ The backend's DELETE is idempotent, so the control simply is not offered on an a
 
 ```ts
 isLiveConnection(c); // connectionStatus !== "DISCONNECTED"
-needsReconnect(c); // EXPIRED | REVOKED | ERROR
+isUsableConnection(c); // backend's `usable` flag
+needsReconnect(c); // backend's `reauthorizationRequired`, or readiness ERROR
 ```
 
 The hub renders live connections first and folds disconnected ones into a `<details>` — they are a record, not something to act on.
 
-`needsReconnect` includes `EXPIRED` even though the backend _can_ refresh some providers, because nothing triggers a refresh from the UI today. Surfacing it as actionable is honest rather than optimistic.
+### Readiness, not status
 
-Each status implies a different recovery path, which is why the UI branches on it rather than on a boolean:
+`ScmConnectionResponse` carries `readiness`, `usable` and `reauthorizationRequired` alongside `connectionStatus`, and **the derived fields are the ones to branch on.**
 
-| Status         | Label          | Tone    | Reconnect offered |
-| -------------- | -------------- | ------- | ----------------- |
-| `ACTIVE`       | Active         | pass    | no                |
-| `EXPIRED`      | Token expired  | warn    | yes               |
-| `REVOKED`      | Access revoked | fail    | yes               |
-| `ERROR`        | Error          | fail    | yes               |
-| `DISCONNECTED` | Disconnected   | outline | yes               |
+The raw status cannot answer "can I use this now". `EXPIRED` means two different things: usable, when the backend can renew the credential silently from a stored refresh token, and not usable when it cannot. This UI used to read the status directly and list every `EXPIRED` connection as needing a reconnect — which was wrong in the common case, because the backend renews those on demand and on a background sweep. A user with a perfectly working Bitbucket account was shown a warning badge and a Reconnect button for a token the backend had already replaced.
+
+So `needsReconnect` no longer includes `EXPIRED`; it reads `reauthorizationRequired`. Both predicates fall back to `connectionStatus` when the field is absent, so an older backend still renders sensibly.
+
+| `readiness` | Label | Tone | Reconnect offered |
+| ----------------------------- | ---------------- | ------- | ----------------- |
+| `READY` | Active | pass | no |
+| `EXPIRING` | Renewing soon | pass | no |
+| `REFRESHABLE` | Renewing | pass | no |
+| `REAUTHORIZATION_REQUIRED` | Reconnect needed | fail | yes |
+| `ERROR` | Error | fail | yes |
+| `DISCONNECTED` | Disconnected | outline | yes |
+
+`EXPIRING` and `REFRESHABLE` are deliberately `pass` with no action: the user has nothing to do, and a warning tone would train them to ignore the badge. `scmConnectionState(connection)` in `src/lib/scm/presentation.ts` picks this map when `readiness` is present and falls back to the status map otherwise — the status map is retained for that fallback and for `scmStatus` callers that only hold a string.
 
 Only states with a consequence get a written explanation; narrating "Active" would be noise on the common case.
 
@@ -281,7 +289,8 @@ Worth adding, in rough priority order: the connection-result contract for all th
 
 - **No committed tests** for any of this feature's routes.
 - **A misconfigured provider cannot be detected ahead of time.** `GET /scm/providers` exposes no signal for whether server-side credentials are configured — `active` only reflects the database flag — so Connect cannot be disabled preemptively. It fails on click with an explanatory banner instead.
-- **`EXPIRED` requires a manual reconnect.** The backend declares `OAUTH_TOKEN_REFRESH` per provider but nothing schedules a refresh.
-- **No webhook visibility.** The backend ingests and stores deliveries; nothing is surfaced.
+- **No webhook visibility.** The backend ingests, normalises and dispatches deliveries; nothing is surfaced here, and nothing subscribes on the backend either.
+- **No way to set a Bitbucket workspace.** Bitbucket's repository listing needs a workspace slug, and Atlassian removed every endpoint that could discover one, so the backend falls back to the account name. When they differ — or when the account belongs to no workspace — listing fails with `SCM_REPOSITORY_SCOPE_NOT_FOUND` and the only fix today is setting `metadata.workspace` on the connection row directly. There is no UI for it.
+- **Renewal is invisible while it happens.** `REFRESHABLE` renders as "Renewing", but there is no polling or revalidation, so the badge updates on the next navigation rather than when the renewal lands.
 - Bitbucket declares `CREATE_PR_REVIEW` unsupported, so its detail page shows "Submit reviews" under Not supported even once connected. That is a backend capability declaration, not a UI bug.
 - The hub does not summarise connections on `/dashboard`; that would mean a second backend round trip on a page that otherwise needs one, so the dashboard links here instead.

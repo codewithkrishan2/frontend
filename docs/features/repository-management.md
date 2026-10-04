@@ -73,7 +73,7 @@ From the sidebar, nothing is known yet — so `/repositories` resolves it:
 - **several → a short list of accounts**, which is the only place the choice is genuinely the user's.
 - **none → an empty state** pointing at connecting one.
 
-`EXPIRED` and `REVOKED` connections are excluded from the list and named in a banner beneath it. Offering them would fail on the first provider call; omitting them silently would leave a user with two accounts wondering where the second went.
+"Usable" is `isUsableConnection` — the backend's own `usable` flag, not "does not need reconnecting". The two are nearly the same and differ on exactly the case that matters: a connection whose token has expired but which the backend can renew silently is usable, and excluding it would hide a working account behind a reconnect prompt. Connections that genuinely need fresh consent are excluded and named in a banner beneath the list; offering them would fail on the first provider call, and omitting them silently would leave a user with two accounts wondering where the second went. See [readiness, not status](scm-integration.md#readiness-not-status).
 
 It is **top-level rather than nested under `/integrations`** because the sidebar needs a destination the user is not already on. Before it existed, the Repositories row pointed at `/integrations` — so clicking it from the hub, which is the page it is reached from, **did nothing at all**.
 
@@ -261,6 +261,7 @@ Every failure arrives as an `ApiError` carrying the backend's `ScmErrorCode` on 
 | `SCM_CONNECTION_NOT_ACTIVE`    | 409    | Not active; offers reconnect                                  |
 | `SCM_CONNECTION_EXPIRED`       | 401    | Credentials expired; offers reconnect                         |
 | `SCM_REPOSITORY_NOT_FOUND`     | 404    | Renamed, moved, or no longer accessible                       |
+| `SCM_REPOSITORY_SCOPE_NOT_FOUND` | 404  | No readable account scope — for Bitbucket, no workspace       |
 | `SCM_PULL_REQUEST_NOT_FOUND`   | 404    | Whole page `notFound()` on the detail route                   |
 | `SCM_OPERATION_NOT_SUPPORTED`  | 400    | This provider cannot do that                                  |
 | `SCM_REQUEST_INVALID`          | 400    | Adjust the filters                                            |
@@ -269,6 +270,8 @@ Every failure arrives as an `ApiError` carrying the backend's `ScmErrorCode` on 
 | `SCM_RESPONSE_MAPPING_INVALID` | 500    | Server-side configuration, not anything you did               |
 
 `failureSuggestsReconnect` decides whether the error offers a link to the integrations hub rather than a retry, which would not help for any of the connection-state codes.
+
+`SCM_REPOSITORY_SCOPE_NOT_FOUND` shares its status with `SCM_REPOSITORY_NOT_FOUND` but needs different wording, which is why the backend separates them. It is raised on a **listing**, where the user asked for no particular repository, so "that repository was not found" would be nonsense advice. It means the account scope the listing derives from could not be resolved — on Bitbucket, that the connected account has no workspace this token can read.
 
 A 401 goes to `/api/auth/signout` rather than `/login`, for the dead-cookie loop reason described in the [identity feature](identity.md#the-invalid-session-loop). A Server Component cannot clear cookies.
 
